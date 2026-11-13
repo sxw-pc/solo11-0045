@@ -4,7 +4,6 @@ _report_out/
 *.db
 *.sqlite3
 *.log
-
 # Python tooling
 __pycache__/
 *.py[cod]
@@ -16,3 +15,7 @@ venv/
 build/
 dist/
 *.egg-info/
+node_modules/
+*.pyc
+.benchmarks/
+.env
