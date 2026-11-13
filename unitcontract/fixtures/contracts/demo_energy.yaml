@@ -1,0 +1,58 @@
+schema_version: "1"
+name: synthetic-facility-readings
+description: >
+  Offline synthetic contract covering energy, power, mass, length,
+  temperature, volume and count. All units are declared locally.
+defaults:
+  precision: 2
+  rounding: half_even
+fields:
+  - field: energy
+    dimension: energy
+    canonical_unit: J
+    allowed_units: [J, kJ, kWh, MWh, GJ]
+    precision: 2
+    rounding: half_even
+    range: {min: 0, max: 5000000000}
+  - field: power
+    dimension: power
+    canonical_unit: W
+    allowed_units: [W, kW, MW]
+    precision: 2
+    rounding: half_even
+    range: {min: 0, max: 2000000}
+  - field: mass
+    dimension: mass
+    canonical_unit: kg
+    allowed_units: [g, kg, t]
+    precision: 3
+    rounding: half_up
+    range: {min: 0, max: 100000}
+  - field: length
+    dimension: length
+    canonical_unit: m
+    allowed_units: [mm, cm, m, km]
+    precision: 2
+    rounding: half_even
+    range: {min: 0, max: 10000}
+  - field: temperature
+    dimension: temperature
+    canonical_unit: C
+    allowed_units: [C, K, F]
+    precision: 1
+    rounding: half_even
+    range: {min: -50, max: 60}
+  - field: volume
+    dimension: volume
+    canonical_unit: L
+    allowed_units: [mL, L, m3]
+    precision: 2
+    rounding: half_even
+    range: {min: 0, max: 5000}
+  - field: count
+    dimension: count
+    canonical_unit: count
+    allowed_units: [count]
+    precision: 0
+    rounding: half_up
+    range: {min: 0, max: 100000}

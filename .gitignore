@@ -1,0 +1,18 @@
+# Demo and local run artifacts
+_demo_out/
+_report_out/
+*.db
+*.sqlite3
+*.log
+
+# Python tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/

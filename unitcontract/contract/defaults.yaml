@@ -1,0 +1,62 @@
+# Built-in, deliberately small unit catalogue.
+# Ratio units describe how many base units one unit represents.
+# Temperature units are affine and are handled by units/temperature.py.
+schema_version: "1"
+dimensions:
+  length:
+    base_unit: m
+    units:
+      mm: {factor: "1/1000"}
+      cm: {factor: "1/100"}
+      m: {factor: "1"}
+      km: {factor: "1000"}
+      inch: {factor: "127/5000"}
+      ft: {factor: "381/1250"}
+      yd: {factor: "1143/1250"}
+      mile: {factor: "201168/125"}
+  mass:
+    base_unit: kg
+    units:
+      mg: {factor: "1/1000000"}
+      g: {factor: "1/1000"}
+      kg: {factor: "1"}
+      t: {factor: "1000"}
+      lb: {factor: "45359237/100000000"}
+  energy:
+    base_unit: J
+    units:
+      J: {factor: "1"}
+      kJ: {factor: "1000"}
+      kWh: {factor: "3600000"}
+      MWh: {factor: "3600000000"}
+      GJ: {factor: "1000000000"}
+      cal: {factor: "523/125"}
+  power:
+    base_unit: W
+    units:
+      W: {factor: "1"}
+      kW: {factor: "1000"}
+      MW: {factor: "1000000"}
+  time:
+    base_unit: s
+    units:
+      s: {factor: "1"}
+      min: {factor: "60"}
+      h: {factor: "3600"}
+      day: {factor: "86400"}
+  volume:
+    base_unit: L
+    units:
+      mL: {factor: "1/1000"}
+      L: {factor: "1"}
+      m3: {factor: "1000"}
+  count:
+    base_unit: count
+    units:
+      count: {factor: "1"}
+  temperature:
+    base_unit: K
+    units:
+      C: {affine: true}
+      K: {affine: true}
+      F: {affine: true}

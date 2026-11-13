@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unit-contract"
+version = "0.1.0"
+description = "Offline field dimension/unit contract validation, conversion and audit ledger"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+server = ["Flask>=3.0"]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+unitcontract = "unitcontract.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["unitcontract*"]
+
+[tool.setuptools.package-data]
+unitcontract = [
+    "contract/*.yaml",
+    "fixtures/contracts/*.yaml",
+    "fixtures/data/*.csv",
+    "fixtures/data/*.jsonl",
+    "fixtures/expected/*",
+    "server/static/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

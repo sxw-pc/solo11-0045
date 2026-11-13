@@ -1,0 +1,49 @@
+:root {
+  --ink: #17211b;
+  --muted: #5d6b63;
+  --paper: #f6f7f2;
+  --card: #ffffff;
+  --line: #d9ded6;
+  --accent: #1d6b4f;
+  --bad: #a23a2a;
+  --warn: #8a5a00;
+  --soft: #edf2ec;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.55 "Segoe UI", system-ui, sans-serif;
+}
+main { max-width: 1100px; margin: 0 auto; padding: 34px 22px 60px; }
+header { border-bottom: 3px solid var(--accent); padding-bottom: 16px; margin-bottom: 24px; }
+h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.02em; }
+h2 { font-size: 19px; margin: 0 0 10px; }
+.eyebrow { color: var(--accent); font-size: 11px; letter-spacing: 0.15em; margin: 0 0 6px; }
+.muted { color: var(--muted); }
+.mono { font-family: Consolas, "Courier New", monospace; font-size: 13px; }
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px;
+  margin: 18px 0;
+  overflow-x: auto;
+}
+.headline { margin-top: 24px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.card strong { display: block; font-size: 26px; line-height: 1.2; }
+.card span { color: var(--muted); font-size: 13px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+code { background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+.empty { color: var(--muted); margin: 4px 0; }
+.error { color: var(--bad); font-weight: 600; }
+.warning { color: var(--warn); font-weight: 600; }
+footer { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); font-size: 12px; }
+@media (max-width: 640px) { main { padding: 22px 12px; } h1 { font-size: 25px; } }

@@ -1,0 +1,293 @@
+{
+  "contract": {
+    "description": "Offline synthetic contract covering energy, power, mass, length, temperature, volume and count. All units are declared locally.\n",
+    "fields": [
+      {
+        "allowed_units": [
+          "J",
+          "kJ",
+          "kWh",
+          "MWh",
+          "GJ"
+        ],
+        "canonical_unit": "J",
+        "dimension": "energy",
+        "field": "energy",
+        "precision": 2,
+        "range": {
+          "max": "5000000000",
+          "min": "0"
+        },
+        "rounding": "half_even"
+      },
+      {
+        "allowed_units": [
+          "W",
+          "kW",
+          "MW"
+        ],
+        "canonical_unit": "W",
+        "dimension": "power",
+        "field": "power",
+        "precision": 2,
+        "range": {
+          "max": "2000000",
+          "min": "0"
+        },
+        "rounding": "half_even"
+      },
+      {
+        "allowed_units": [
+          "g",
+          "kg",
+          "t"
+        ],
+        "canonical_unit": "kg",
+        "dimension": "mass",
+        "field": "mass",
+        "precision": 3,
+        "range": {
+          "max": "100000",
+          "min": "0"
+        },
+        "rounding": "half_up"
+      },
+      {
+        "allowed_units": [
+          "mm",
+          "cm",
+          "m",
+          "km"
+        ],
+        "canonical_unit": "m",
+        "dimension": "length",
+        "field": "length",
+        "precision": 2,
+        "range": {
+          "max": "10000",
+          "min": "0"
+        },
+        "rounding": "half_even"
+      },
+      {
+        "allowed_units": [
+          "C",
+          "K",
+          "F"
+        ],
+        "canonical_unit": "C",
+        "dimension": "temperature",
+        "field": "temperature",
+        "precision": 1,
+        "range": {
+          "max": "60",
+          "min": "-50"
+        },
+        "rounding": "half_even"
+      },
+      {
+        "allowed_units": [
+          "mL",
+          "L",
+          "m3"
+        ],
+        "canonical_unit": "L",
+        "dimension": "volume",
+        "field": "volume",
+        "precision": 2,
+        "range": {
+          "max": "5000",
+          "min": "0"
+        },
+        "rounding": "half_even"
+      },
+      {
+        "allowed_units": [
+          "count"
+        ],
+        "canonical_unit": "count",
+        "dimension": "count",
+        "field": "count",
+        "precision": 0,
+        "range": {
+          "max": "100000",
+          "min": "0"
+        },
+        "rounding": "half_up"
+      }
+    ],
+    "name": "synthetic-facility-readings",
+    "schema_version": "1"
+  },
+  "counts": {
+    "conversion_skipped": 12,
+    "findings_total": 17,
+    "normalized_total": 114
+  },
+  "findings": [
+    {
+      "category": "contract",
+      "cause": "The unit is registered but excluded by the field contract.",
+      "code": "E_UNIT_NOT_ALLOWED",
+      "dimension": "mass",
+      "field": "mass",
+      "message": "unit lb is registered but not allowed by this contract",
+      "raw_value": "500",
+      "row": 2,
+      "severity": "error",
+      "suggestion": "Convert upstream or extend allowed_units deliberately.",
+      "unit": "lb"
+    },
+    {
+      "category": "contract",
+      "cause": "The unit is registered but excluded by the field contract.",
+      "code": "E_UNIT_NOT_ALLOWED",
+      "dimension": "length",
+      "field": "length",
+      "message": "unit inch is registered but not allowed by this contract",
+      "raw_value": "12",
+      "row": 2,
+      "severity": "error",
+      "suggestion": "Convert upstream or extend allowed_units deliberately.",
+      "unit": "inch"
+    },
+    {
+      "category": "range",
+      "cause": "The canonical value lies outside the declared physical range.",
+      "code": "E_OUT_OF_RANGE",
+      "dimension": "energy",
+      "field": "energy",
+      "message": "canonical value 1000000000000 J exceeds maximum 5000000000",
+      "raw_value": "1000",
+      "row": 3,
+      "severity": "error",
+      "suggestion": "Investigate the source reading before accepting the value.",
+      "unit": "GJ"
+    },
+    {
+      "category": "completeness",
+      "cause": "A declared field has no value in the source row.",
+      "code": "E_MISSING",
+      "dimension": "energy",
+      "field": "energy",
+      "message": "value is missing",
+      "raw_value": null,
+      "row": 4,
+      "severity": "error",
+      "suggestion": "Populate the value or make the field optional upstream.",
+      "unit": "kWh"
+    },
+    {
+      "category": "contract",
+      "cause": "The unit is registered but excluded by the field contract.",
+      "code": "E_UNIT_NOT_ALLOWED",
+      "dimension": "energy",
+      "field": "energy",
+      "message": "unit cal is registered but not allowed by this contract",
+      "raw_value": "12",
+      "row": 5,
+      "severity": "error",
+      "suggestion": "Convert upstream or extend allowed_units deliberately.",
+      "unit": "cal"
+    }
+  ],
+  "normalized": [
+    {
+      "canonical_unit": "J",
+      "canonical_value": "45000000.00",
+      "dimension": "energy",
+      "field": "energy",
+      "precision": 2,
+      "raw_value": "12.50",
+      "rounding": "half_even",
+      "row": 1,
+      "source_unit": "kWh"
+    },
+    {
+      "canonical_unit": "W",
+      "canonical_value": "2500.00",
+      "dimension": "power",
+      "field": "power",
+      "precision": 2,
+      "raw_value": "2.50",
+      "rounding": "half_even",
+      "row": 1,
+      "source_unit": "kW"
+    },
+    {
+      "canonical_unit": "kg",
+      "canonical_value": "3.250",
+      "dimension": "mass",
+      "field": "mass",
+      "precision": 3,
+      "raw_value": "3.250",
+      "rounding": "half_up",
+      "row": 1,
+      "source_unit": "kg"
+    }
+  ],
+  "run": {
+    "contract_hash": "a670bce2d9b6ecc5ce5382809871735c760fd262ed6001728bbd7695f7ba7507",
+    "contract_name": "synthetic-facility-readings",
+    "data_format": "csv",
+    "data_hash": "54cc03c096a35a172bedcc55cc52b3aad025c6b2014688c30a6770b152c31315",
+    "no_timestamp": true,
+    "passed_rows": 4,
+    "rows_total": 18,
+    "run_id": "a703c6b899208318",
+    "source_name": "demo_readings.csv",
+    "violation_rows": 14,
+    "warning_rows": 2
+  },
+  "schema_version": "1",
+  "summary": {
+    "code_counts": {
+      "E_MISSING": 2,
+      "E_NOT_NUMERIC": 1,
+      "E_OUT_OF_RANGE": 3,
+      "E_TEMP_BELOW_ABSOLUTE": 2,
+      "E_UNIT_DIM_MISMATCH": 1,
+      "E_UNIT_MISSING": 1,
+      "E_UNIT_NOT_ALLOWED": 4,
+      "E_UNIT_UNKNOWN": 1,
+      "W_PRECISION_EXCEEDED": 2
+    },
+    "error_findings": 15,
+    "field_violations": {
+      "count": 1,
+      "energy": 3,
+      "length": 3,
+      "mass": 3,
+      "power": 1,
+      "temperature": 3,
+      "volume": 1
+    },
+    "passed_rows": 4,
+    "rows_total": 18,
+    "top_fields": [
+      {
+        "count": 3,
+        "field": "energy"
+      },
+      {
+        "count": 3,
+        "field": "length"
+      },
+      {
+        "count": 3,
+        "field": "mass"
+      },
+      {
+        "count": 3,
+        "field": "temperature"
+      },
+      {
+        "count": 1,
+        "field": "count"
+      }
+    ],
+    "violation_rows": 14,
+    "warning_findings": 2,
+    "warning_rows": 2
+  }
+}
