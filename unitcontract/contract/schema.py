@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+from pathlib import PurePath
 from typing import Any
 
 from unitcontract.units.registry import UnitRegistry
@@ -20,6 +21,20 @@ DIMENSIONS = (
     "volume",
     "count",
 )
+
+# Keys of a field declaration whose provenance is tracked through overlay chains.
+TRACKED_FIELD_KEYS = (
+    "dimension",
+    "canonical_unit",
+    "allowed_units",
+    "precision",
+    "rounding",
+    "range",
+)
+
+# Source label used when a key's effective value comes from a built-in fallback
+# rather than any document in the overlay chain.
+BUILTIN_SOURCE = "<builtin>"
 
 
 @dataclass(frozen=True)
@@ -61,6 +76,20 @@ class ContractField:
     rounding: str
     range_min: Fraction | None = None
     range_max: Fraction | None = None
+    # Sorted (key, source) pairs recording which document (baseline source_name
+    # or overlay label) supplied each effective key; BUILTIN_SOURCE for fallbacks.
+    key_sources: tuple[tuple[str, str], ...] = ()
+
+    def source_for(self, key: str) -> str | None:
+        """Return the source label for one tracked key, if recorded."""
+        for item_key, source in self.key_sources:
+            if item_key == key:
+                return source
+        return None
+
+    def sources_dict(self) -> dict[str, str]:
+        """Provenance as a plain mapping, ordered by key."""
+        return dict(self.key_sources)
 
     def as_dict(self) -> dict[str, Any]:
         range_dict = None
@@ -87,6 +116,8 @@ class Contract:
     fields: tuple[ContractField, ...]
     schema_version: str = SUPPORTED_SCHEMA_VERSION
     source_name: str = "<memory>"
+    # Labels of the overlays applied on top of the baseline, in merge order.
+    overlays: tuple[str, ...] = ()
 
     @property
     def field_map(self) -> dict[str, ContractField]:
@@ -94,6 +125,10 @@ class Contract:
 
     def field_names(self) -> tuple[str, ...]:
         return tuple(field.field for field in self.fields)
+
+    def field_sources_dict(self) -> dict[str, dict[str, str]]:
+        """Per-field provenance: field name -> tracked key -> source label."""
+        return {field.field: field.sources_dict() for field in self.fields}
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -128,12 +163,52 @@ def _location(source_name: str, index: int, name: str | None = None) -> str:
     return f"{source_name}#fields{suffix}"
 
 
+def source_label(source_name: str) -> str:
+    """Stable provenance label for a document: file name without directories.
+
+    Reports must stay byte-identical regardless of the checkout directory, so
+    provenance records the document's name, not its absolute path.
+    """
+    return PurePath(source_name).name
+
+
+def _field_key_sources(
+    merged: dict[str, Any],
+    field_name: str,
+    source_name: str,
+    key_sources: dict[str, dict[str, str]] | None,
+) -> tuple[tuple[str, str], ...]:
+    """Resolve the provenance tuple for one field.
+
+    ``key_sources`` maps field name -> key -> source label and is supplied by
+    the loader when an overlay chain was merged. Without it the payload is a
+    single document, so every explicit key comes from ``source_name`` and every
+    absent key falls back to :data:`BUILTIN_SOURCE`.
+    """
+    base_label = source_label(source_name)
+    provided = (key_sources or {}).get(field_name, {})
+    pairs: list[tuple[str, str]] = [("field", provided.get("field", base_label))]
+    for key in TRACKED_FIELD_KEYS:
+        source = provided.get(key)
+        if source is None:
+            source = base_label if key in merged else BUILTIN_SOURCE
+        pairs.append((key, source))
+    return tuple(pairs)
+
+
 def build_contract(
     payload: Any,
     source_name: str,
     registry: UnitRegistry | None = None,
+    key_sources: dict[str, dict[str, str]] | None = None,
+    overlays: tuple[str, ...] = (),
 ) -> Contract:
-    """Validate a parsed YAML payload and return an immutable contract."""
+    """Validate a parsed YAML payload and return an immutable contract.
+
+    ``key_sources`` optionally carries per-field, per-key provenance labels
+    computed while merging an overlay chain; ``overlays`` lists the applied
+    overlay labels in order. Both default to single-document behaviour.
+    """
     registry = registry or UnitRegistry.bundled()
     issues: list[ContractIssue] = []
 
@@ -282,6 +357,7 @@ def build_contract(
                 rounding=rounding,
                 range_min=range_min,
                 range_max=range_max,
+                key_sources=_field_key_sources(merged, field_name, source_name, key_sources),
             )
         )
 
@@ -293,4 +369,5 @@ def build_contract(
         fields=tuple(fields),
         schema_version=str(schema_version),
         source_name=source_name,
+        overlays=tuple(overlays),
     )

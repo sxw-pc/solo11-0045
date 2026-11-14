@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from unitcontract.contract.loader import contract_sha256, load_contract
 from unitcontract.contract.schema import Contract
@@ -34,6 +34,8 @@ class RunResult:
     validation: ValidationResult
     conversion: ConversionResult
     audit: AuditReport
+    # (overlay label, sha256) pairs in application order; empty without overlays.
+    overlay_hashes: tuple[tuple[str, str], ...] = ()
 
     def run_metadata(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -54,20 +56,31 @@ class RunResult:
         return payload
 
 
-def _run_id(contract_hash: str, data_hash: str, contract: Contract, source_name: str) -> str:
-    material = json.dumps(
-        {
-            "contract_hash": contract_hash,
-            "data_hash": data_hash,
-            "contract_name": contract.name,
-            "schema_version": contract.schema_version,
-            "source_name": source_name,
-        },
+def _run_id(
+    contract_hash: str,
+    data_hash: str,
+    contract: Contract,
+    source_name: str,
+    overlay_hashes: tuple[tuple[str, str], ...] = (),
+) -> str:
+    material: dict[str, Any] = {
+        "contract_hash": contract_hash,
+        "data_hash": data_hash,
+        "contract_name": contract.name,
+        "schema_version": contract.schema_version,
+        "source_name": source_name,
+    }
+    if overlay_hashes:
+        # Only extends the material when overlays are applied, so overlay-free
+        # runs keep their historical run ids byte-for-byte.
+        material["overlays"] = [[name, digest] for name, digest in overlay_hashes]
+    encoded = json.dumps(
+        material,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(material).hexdigest()[:16]
+    return hashlib.sha256(encoded).hexdigest()[:16]
 
 
 def execute(
@@ -77,17 +90,24 @@ def execute(
     no_timestamp: bool = False,
     registry: UnitRegistry | None = None,
     limit: int | None = None,
+    overlay_paths: Iterable[str | Path] | None = None,
 ) -> RunResult:
     """Run the full read → validate → convert → audit pipeline."""
     registry = registry or UnitRegistry.bundled()
     contract_file = Path(contract_path)
     data_file = Path(data_path)
-    contract = load_contract(contract_file, registry=registry)
+    overlays = tuple(overlay_paths) if overlay_paths else ()
+    contract = load_contract(contract_file, registry=registry, overlay_paths=overlays)
     fmt = detect_format(data_file) if data_format == "auto" else data_format.lower()
     rows = read_rows(data_file, data_format=fmt, limit=limit)
     contract_hash = contract_sha256(contract_file)
     data_hash = hashlib.sha256(data_file.read_bytes()).hexdigest()
     source_name = data_file.name
+    # Position-aligned with contract.overlays: (provenance label, file sha256).
+    overlay_hashes = tuple(
+        (label, hashlib.sha256(Path(item).read_bytes()).hexdigest())
+        for label, item in zip(contract.overlays, overlays)
+    )
 
     validation = validate_records(contract, rows, registry=registry)
     conversion = convert_records(contract, rows, registry=registry)
@@ -96,7 +116,7 @@ def execute(
     if not no_timestamp:
         generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return RunResult(
-        run_id=_run_id(contract_hash, data_hash, contract, source_name),
+        run_id=_run_id(contract_hash, data_hash, contract, source_name, overlay_hashes),
         contract=contract,
         contract_path=str(contract_file.resolve()),
         data_path=str(data_file.resolve()),
@@ -110,4 +130,5 @@ def execute(
         validation=validation,
         conversion=conversion,
         audit=audit,
+        overlay_hashes=overlay_hashes,
     )

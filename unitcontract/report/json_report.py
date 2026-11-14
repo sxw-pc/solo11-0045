@@ -11,6 +11,22 @@ from unitcontract.pipeline import RunResult
 REPORT_SCHEMA_VERSION = "1"
 
 
+def build_field_sources_extension(result: RunResult) -> dict[str, Any]:
+    """Provenance extension: where each field's effective keys came from.
+
+    Lives outside the stable ``contract`` section so existing consumers and
+    golden reports keep their exact shape.
+    """
+    hashes = dict(result.overlay_hashes)
+    return {
+        "overlays": [
+            {"name": label, "sha256": hashes.get(label)}
+            for label in result.contract.overlays
+        ],
+        "fields": result.contract.field_sources_dict(),
+    }
+
+
 def build_json_report(result: RunResult) -> dict[str, Any]:
     findings = [enrich_finding(item) for item in result.validation.findings]
     return {
@@ -24,6 +40,9 @@ def build_json_report(result: RunResult) -> dict[str, Any]:
             "findings_total": len(findings),
             "normalized_total": len(result.conversion.records),
             "conversion_skipped": result.conversion.skipped,
+        },
+        "extensions": {
+            "field_sources": build_field_sources_extension(result),
         },
     }
 

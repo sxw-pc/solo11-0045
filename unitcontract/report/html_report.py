@@ -5,6 +5,7 @@ from __future__ import annotations
 from html import escape
 from typing import Iterable
 
+from unitcontract.contract.schema import source_label
 from unitcontract.engine.auditor import catalog_for
 from unitcontract.pipeline import RunResult
 
@@ -140,6 +141,20 @@ def render_html(result: RunResult, max_details: int = 50) -> str:
             f'<p class="note">仅显示前 {max_details} 条，共 '
             f"{len(result.conversion.records)} 条规范化记录。</p>"
         )
+    sources_html = ""
+    if result.contract.overlays:
+        source_rows = [
+            [field.field, key, source]
+            for field in result.contract.fields
+            for key, source in field.key_sources
+        ]
+        chain = " → ".join(_e(label) for label in result.contract.overlays)
+        sources_html = (
+            "<h2>字段来源（overlay 链）</h2>"
+            f'<p class="note">基线契约 <span class="mono">{_e(source_label(result.contract.source_name))}</span>'
+            f"；叠加顺序 {chain}</p>"
+            + _table(["字段", "键", "生效来源"], source_rows)
+        )
     return "\n".join(
         [
             "<!doctype html>",
@@ -158,6 +173,7 @@ def render_html(result: RunResult, max_details: int = 50) -> str:
             f'<section class="cards">{cards_html}</section>',
             "<h2>契约摘要</h2>",
             _table(["字段", "量纲", "规范单位", "允许单位", "精度", "舍入", "范围"], contract_rows),
+            sources_html,
             "<h2>错误码分布</h2>",
             _table(["错误码", "类别", "数量", "原因", "建议"], code_rows),
             f"<h2>违规明细（前 {max_details} 条）</h2>",

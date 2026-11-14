@@ -72,10 +72,19 @@ python -m unitcontract serve --host 127.0.0.1 --port 8731 \
 python -m unitcontract validate --contract c.yaml --data d.csv --db ledger.db
 python -m unitcontract convert --contract c.yaml --data d.csv --out normalized.jsonl
 python -m unitcontract report --contract c.yaml --data d.csv --out ./_report_out
+
+# 链式叠加多份 overlay（靠后者覆盖重叠键）
+python -m unitcontract validate --contract c.yaml --data d.csv \
+  --overlay team-defaults.yaml --overlay site-special.yaml
+
+# 对比同一基线下两条 overlay 链的口径与结论差异
+python -m unitcontract compare --contract c.yaml --data d.csv \
+  --left-overlay team-defaults.yaml --right-overlay site-special.yaml \
+  --out ./_compare_out
 ```
 
 `validate` 在存在违规行时返回退出码 1，契约 / 数据读取错误返回 2。
-`demo`、`convert`、`report` 成功返回 0。
+`demo`、`convert`、`report`、`compare` 成功返回 0。
 
 ## 4. 契约 YAML 语法
 
@@ -110,6 +119,27 @@ fields:
 - `rounding`：`half_up`（四舍五入）、`half_even`（银行家舍入）、`truncate`（向零截断）。
 - `range`：可选，按**规范单位**判断；`min` / `max` 可只给一侧。
 - 顶层 `defaults` 与字段合并；loader 也支持 overlay 文件按 `field` 名覆盖字段。
+
+### Overlay 链与字段来源
+
+`validate` / `convert` / `report` 接受重复的 `--overlay PATH`，按给定顺序链式叠加；
+`load_contract(..., overlay_paths=[...])` 是等价的编程接口，旧的单份
+`overlay_path` 参数继续可用。合并规则确定且与手工合成等价：
+
+- overlay 只覆盖显式给出的键，未给出的键继续从基线继承；
+- 字段级条目优先于任何一层的 `defaults`；同类来源之间靠后的 overlay 覆盖重叠键；
+- `defaults` 自身也按链序逐键合并，靠后者优先；
+- 逐份折叠叠加与先把多份 overlay 合成一份再叠加，得到的契约完全相同。
+
+每个字段最终生效的键都会记录来源（基线文件名、overlay 文件名或 `<builtin>`），
+落在 JSON 报告的 `extensions.field_sources` 扩展段（契约段原有结构不变）；应用了
+overlay 时，Markdown / HTML 报告额外渲染「字段来源（overlay 链）」小节。来源标签只取
+文件名不含目录，因此同一组输入在任何目录下都生成逐字节一致的报告。
+
+`compare` 子命令在同一基线契约与同一份数据上分别应用两条 overlay 链，输出
+`compare.json` / `compare.md`：字段级口径差异（含两侧各自来源）、validate 行级结论
+不一致计数（通过/违规状态与错误码集合两个口径）及错误码计数差、convert 规范值不一致
+的 (行, 字段) 对数。两侧数据行与数据哈希均走原有 pipeline，退出码语义与其他命令一致。
 
 数据约定：
 
@@ -187,6 +217,7 @@ unit-contract/
 │  ├─ __main__.py / __init__.py
 │  ├─ cli.py                    # 子命令参数与分发
 │  ├─ pipeline.py               # 读取→校验→换算→审计的统一流程
+│  ├─ compare.py                # 同一基线下两条 overlay 链的对比
 │  ├─ demo.py                   # 合成数据与 demo 编排
 │  ├─ logging_utils.py          # 控制台 + 本地文件日志
 │  ├─ contract/                 # schema.py, loader.py, defaults.yaml

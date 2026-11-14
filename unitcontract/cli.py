@@ -8,6 +8,7 @@ import socket
 import sys
 from pathlib import Path
 
+from unitcontract.compare import run_compare, write_compare_reports
 from unitcontract.contract.schema import ContractValidationError
 from unitcontract.demo import format_demo_summary, run_demo
 from unitcontract.engine.reader import DataReadError
@@ -24,6 +25,14 @@ def _add_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--data", required=True, help="CSV or JSONL data path")
     parser.add_argument(
         "--format", default="auto", choices=["auto", "csv", "jsonl"], dest="data_format"
+    )
+    parser.add_argument(
+        "--overlay",
+        action="append",
+        default=[],
+        dest="overlays",
+        metavar="PATH",
+        help="overlay YAML applied on top of the contract; repeat to chain in order",
     )
 
 
@@ -77,6 +86,7 @@ def command_validate(args: argparse.Namespace) -> int:
         args.data,
         data_format=args.data_format,
         no_timestamp=args.no_timestamp,
+        overlay_paths=args.overlays,
     )
     _print_summary(result, max_details=args.max_details)
     _save_if_requested(result, args.db)
@@ -84,7 +94,12 @@ def command_validate(args: argparse.Namespace) -> int:
 
 
 def command_convert(args: argparse.Namespace) -> int:
-    result = execute(args.contract, args.data, data_format=args.data_format)
+    result = execute(
+        args.contract,
+        args.data,
+        data_format=args.data_format,
+        overlay_paths=args.overlays,
+    )
     lines = [
         json.dumps(record.as_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         for record in result.conversion.records
@@ -111,6 +126,7 @@ def command_report(args: argparse.Namespace) -> int:
         args.data,
         data_format=args.data_format,
         no_timestamp=args.no_timestamp,
+        overlay_paths=args.overlays,
     )
     run_dir = out_dir / "runs" / result.run_id
     write_reports(result, run_dir, max_details=args.max_details)
@@ -119,6 +135,32 @@ def command_report(args: argparse.Namespace) -> int:
     for fmt, path in written.items():
         print(f"report.{fmt}={path.resolve()}")
     _save_if_requested(result, args.db, report_dir=str(run_dir))
+    return 0
+
+
+def command_compare(args: argparse.Namespace) -> int:
+    out_dir = Path(args.out)
+    configure_logging(args.log_file or out_dir / "unitcontract.log")
+    compared = run_compare(
+        args.contract,
+        args.data,
+        left_overlays=args.left_overlays,
+        right_overlays=args.right_overlays,
+        data_format=args.data_format,
+        max_details=args.max_details,
+    )
+    written = write_compare_reports(compared.summary, out_dir)
+    summary = compared.summary
+    validation = summary["validation_diff"]
+    conversion = summary["conversion_diff"]
+    print(
+        f"field_diffs={summary['field_diff_count']} "
+        f"status_mismatch_rows={validation['rows_with_different_status']} "
+        f"findings_mismatch_rows={validation['rows_with_different_findings']} "
+        f"value_mismatches={conversion['value_mismatches']}"
+    )
+    for fmt, path in written.items():
+        print(f"compare.{fmt}={path.resolve()}")
     return 0
 
 
@@ -207,6 +249,36 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--db", help="optional SQLite ledger path")
     report.add_argument("--log-file")
     report.set_defaults(func=command_report)
+
+    compare = subparsers.add_parser(
+        "compare",
+        help="compare two overlay chains on one baseline contract and dataset",
+    )
+    compare.add_argument("--contract", required=True, help="baseline contract YAML path")
+    compare.add_argument("--data", required=True, help="CSV or JSONL data path")
+    compare.add_argument(
+        "--format", default="auto", choices=["auto", "csv", "jsonl"], dest="data_format"
+    )
+    compare.add_argument(
+        "--left-overlay",
+        action="append",
+        default=[],
+        dest="left_overlays",
+        metavar="PATH",
+        help="overlay for the left side; repeat to chain in order",
+    )
+    compare.add_argument(
+        "--right-overlay",
+        action="append",
+        default=[],
+        dest="right_overlays",
+        metavar="PATH",
+        help="overlay for the right side; repeat to chain in order",
+    )
+    compare.add_argument("--out", required=True, help="directory for compare.json/compare.md")
+    compare.add_argument("--max-details", type=int, default=50)
+    compare.add_argument("--log-file")
+    compare.set_defaults(func=command_compare)
 
     serve = subparsers.add_parser("serve", help="start the loopback-only local viewer")
     serve.add_argument("--host", default="127.0.0.1")

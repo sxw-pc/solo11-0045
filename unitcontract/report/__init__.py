@@ -7,7 +7,13 @@ from pathlib import Path
 from unitcontract.pipeline import RunResult
 
 from .html_report import render_html
-from .json_report import REPORT_SCHEMA_VERSION, build_json_report, dump_json, render_json
+from .json_report import (
+    REPORT_SCHEMA_VERSION,
+    build_field_sources_extension,
+    build_json_report,
+    dump_json,
+    render_json,
+)
 from .md_report import render_markdown
 
 REPORT_FORMATS = ("json", "md", "html")
@@ -39,6 +45,7 @@ def write_reports(
 __all__ = [
     "REPORT_FORMATS",
     "REPORT_SCHEMA_VERSION",
+    "build_field_sources_extension",
     "build_json_report",
     "dump_json",
     "render_html",

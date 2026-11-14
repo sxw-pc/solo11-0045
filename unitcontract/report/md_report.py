@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from unitcontract.contract.schema import source_label
 from unitcontract.engine.auditor import catalog_for
 from unitcontract.pipeline import RunResult
 
@@ -30,6 +31,27 @@ def _range_text(field_range: dict[str, object] | None) -> str:
     if not field_range:
         return "-"
     return f"[{field_range.get('min') or '-inf'}, {field_range.get('max') or '+inf'}]"
+
+
+def _field_sources_lines(result: RunResult) -> list[str]:
+    """Provenance extension section, rendered only when overlays were applied."""
+    contract = result.contract
+    if not contract.overlays:
+        return []
+    lines = [
+        "",
+        "## 字段来源（overlay 链）",
+        "",
+        "- 基线契约: `" + source_label(contract.source_name) + "`",
+        "- 叠加顺序: " + " → ".join(f"`{label}`" for label in contract.overlays),
+        "",
+    ]
+    rows: list[list[object]] = []
+    for field in contract.fields:
+        for key, source in field.key_sources:
+            rows.append([field.field, key, source])
+    lines.extend(_table(["字段", "键", "生效来源"], rows))
+    return lines
 
 
 def render_markdown(result: RunResult, max_details: int = 50) -> str:
@@ -70,6 +92,7 @@ def render_markdown(result: RunResult, max_details: int = 50) -> str:
             contract_rows,
         )
     )
+    lines.extend(_field_sources_lines(result))
     lines.extend(
         [
             "",

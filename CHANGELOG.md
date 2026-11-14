@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### 新增
+
+- 契约加载支持多份 overlay 按顺序链式叠加：`load_contract(..., overlay_paths=[...])`
+  与 CLI 重复的 `--overlay` 标志；旧单份 `overlay_path` 参数保持兼容。
+  重叠键以靠后 overlay 为准，字段级条目优先于各层 `defaults`，链式叠加与手工合成等价。
+- `ContractField.key_sources` 记录每个生效键的来源（基线文件名 / overlay 文件名 /
+  `<builtin>`）；JSON 报告新增 `extensions.field_sources` 扩展段落盘来源信息，
+  契约段原有结构与 `schema_version` 语义不变。
+- 应用 overlay 时 Markdown / HTML 报告渲染「字段来源（overlay 链）」小节；
+  无 overlay 的报告保持逐字节不变，老 golden 继续通过。
+- 新增 `compare` 子命令：同一基线 + 同一份数据上对比两条 overlay 链，输出
+  `compare.json` / `compare.md`，含字段级口径差异（含两侧来源）、validate 行级结论
+  不一致计数与错误码计数差、convert 规范值不一致对数。
+- `validate` / `convert` / `report` 的既有输出格式与退出码不变；数据行与数据哈希
+  仍走原有 pipeline。
+
 ## v0.1.0 — 初始版本
 
 ### 已实现
