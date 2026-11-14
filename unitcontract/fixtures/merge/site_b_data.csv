@@ -1,0 +1,6 @@
+record_id,energy,energy__unit,mass,mass__unit,temperature,temperature__unit,volume,volume__unit,count,count__unit
+m001,1.5,kWh,2000,g,293.15,K,2.5,L,7,count
+m002,2,kWh,5000,g,293.15,K,1.0,L,3,count
+m003,2,kWh,2000,g,293.15,K,1.0,L,4,count
+m004,1,kWh,3000,g,293.15,K,1.0,L,5,count
+m006,1,kWh,2000,g,293.15,K,2.0,L,8,count

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from unitcontract.contract.schema import ContractValidationError
 from unitcontract.demo import format_demo_summary, run_demo
+from unitcontract.engine.merger import MergeError, MergeResult, SiteSpec, merge_sites
 from unitcontract.engine.reader import DataReadError
 from unitcontract.ledger.storage import save_run
 from unitcontract.logging_utils import configure_logging
@@ -101,6 +102,141 @@ def command_convert(args: argparse.Namespace) -> int:
     else:
         sys.stdout.write(content)
     return 0
+
+
+def _conflict_path(out_path: Path) -> Path:
+    """Derive a conflict-list path from the merged output path."""
+    if out_path.suffix:
+        return out_path.with_suffix(".conflicts.json")
+    return out_path.with_name(out_path.name + ".conflicts.json")
+
+
+def _merge_conflict_document(result: MergeResult) -> dict[str, object]:
+    return {
+        "schema_version": "1",
+        "summary": result.summary(),
+        "conflicts": [conflict.as_dict() for conflict in result.conflicts],
+        "precision_drift": [item.as_dict() for item in result.drift],
+    }
+
+
+def _derived_site_name(contract_path: str) -> str:
+    """Use the contract's declared name, falling back to the file stem."""
+    path = Path(contract_path)
+    try:
+        import yaml
+
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        document = None
+    if isinstance(document, dict):
+        name = document.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return path.stem
+
+
+def _merge_specs(args: argparse.Namespace) -> list[SiteSpec]:
+    """Collect site pairs from ``--site``, ``--pair`` and positional forms.
+
+    All forms may be mixed. ``--site NAME CONTRACT DATA`` carries an explicit
+    label; the other forms derive one from the contract's declared name or file
+    stem. Argument order is irrelevant to the merge result.
+    """
+    specs: list[SiteSpec] = [
+        SiteSpec(
+            name=name,
+            contract_path=contract,
+            data_path=data,
+            data_format=args.data_format,
+        )
+        for name, contract, data in (args.sites or [])
+    ]
+    for contract, data in args.pairs or []:
+        specs.append(
+            SiteSpec(
+                name=_derived_site_name(contract),
+                contract_path=contract,
+                data_path=data,
+                data_format=args.data_format,
+            )
+        )
+    positional = args.paths or []
+    if len(positional) % 2:
+        raise MergeError(
+            "positional merge paths must be CONTRACT DATA pairs; got an odd count"
+        )
+    for index in range(0, len(positional), 2):
+        contract, data = positional[index], positional[index + 1]
+        specs.append(
+            SiteSpec(
+                name=_derived_site_name(contract),
+                contract_path=contract,
+                data_path=data,
+                data_format=args.data_format,
+            )
+        )
+    contracts = args.contracts or []
+    datas = args.datas or []
+    if bool(contracts) != bool(datas):
+        raise MergeError("merge --contract and --data must be supplied together")
+    if len(contracts) != len(datas):
+        raise MergeError(
+            "--contract and --data must be given the same number of times"
+        )
+    for contract, data in zip(contracts, datas):
+        specs.append(
+            SiteSpec(
+                name=_derived_site_name(contract),
+                contract_path=contract,
+                data_path=data,
+                data_format=args.data_format,
+            )
+        )
+    return specs
+
+
+def command_merge(args: argparse.Namespace) -> int:
+    result = merge_sites(_merge_specs(args), business_key=args.key)
+
+    lines = [
+        json.dumps(item.as_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        for item in result.merged
+    ]
+    content = "\n".join(lines) + ("\n" if lines else "")
+
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(content, encoding="utf-8", newline="\n")
+
+    conflict_path = Path(args.conflicts) if args.conflicts else _conflict_path(out_path)
+    conflict_path.parent.mkdir(parents=True, exist_ok=True)
+    conflict_path.write_text(
+        json.dumps(
+            _merge_conflict_document(result),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    summary = result.summary()
+    print(
+        f"wrote={out_path.resolve()} records={len(result.merged)} "
+        f"conflicts={summary['conflicts']} drift={summary['precision_drift']} "
+        f"sites_ok={summary['sites_ok']} sites_skipped={summary['sites_skipped']}",
+        file=sys.stderr,
+    )
+    print(f"conflicts_file={conflict_path.resolve()}", file=sys.stderr)
+    for site in result.skipped_sites:
+        print(
+            f"  skipped site={site.name} codes={','.join(site.codes)}",
+            file=sys.stderr,
+        )
+    return 1 if result.conflicts_found else 0
 
 
 def command_report(args: argparse.Namespace) -> int:
@@ -198,6 +334,69 @@ def build_parser() -> argparse.ArgumentParser:
     _add_data_args(convert)
     convert.add_argument("--out", help="JSONL output path; stdout when omitted")
     convert.set_defaults(func=command_convert)
+
+    merge = subparsers.add_parser(
+        "merge",
+        help="merge normalized records from multiple site contract/data pairs",
+    )
+    merge.add_argument(
+        "--site",
+        action="append",
+        nargs=3,
+        metavar=("NAME", "CONTRACT", "DATA"),
+        dest="sites",
+        help="site name plus its contract and data paths; repeat for each site",
+    )
+    merge.add_argument(
+        "--pair",
+        action="append",
+        nargs=2,
+        metavar=("CONTRACT", "DATA"),
+        dest="pairs",
+        help=(
+            "contract and data paths without a site label; the contract's "
+            "declared name is used as the site name"
+        ),
+    )
+    merge.add_argument(
+        "paths",
+        nargs="*",
+        metavar="CONTRACT_OR_DATA",
+        help=(
+            "positional contract/data pairs: CONTRACT DATA [CONTRACT DATA ...]; "
+            "site names are derived from each contract"
+        ),
+    )
+    merge.add_argument(
+        "--contract",
+        action="append",
+        dest="contracts",
+        help="contract path; repeat, paired positionally with --data",
+    )
+    merge.add_argument(
+        "--data",
+        action="append",
+        dest="datas",
+        help="data path; repeat, paired positionally with --contract",
+    )
+    merge.add_argument("--out", required=True, help="merged JSONL output path")
+    merge.add_argument(
+        "--conflicts",
+        help="conflict list JSON path; defaults to <out>.conflicts.json",
+    )
+    merge.add_argument(
+        "--key",
+        default="record_id",
+        help="business key column used to group records (default: record_id)",
+    )
+    merge.add_argument(
+        "--format",
+        default="auto",
+        choices=["auto", "csv", "jsonl"],
+        dest="data_format",
+        help="data format for every site input",
+    )
+    merge.set_defaults(func=command_merge)
 
     report = subparsers.add_parser("report", help="run and write json/md/html reports")
     _add_data_args(report)

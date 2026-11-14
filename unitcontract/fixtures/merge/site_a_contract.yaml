@@ -1,0 +1,34 @@
+schema_version: "1"
+name: merge-site-a
+description: >
+  Site A merge contract. Canonical units are the site-local choices; the
+  merge command compares exact quantities across sites, not unit labels.
+defaults:
+  precision: 2
+  rounding: half_even
+fields:
+  - field: energy
+    dimension: energy
+    canonical_unit: J
+    allowed_units: [J, kJ, kWh, MWh, GJ]
+  - field: mass
+    dimension: mass
+    canonical_unit: kg
+    allowed_units: [g, kg, t]
+  - field: temperature
+    dimension: temperature
+    canonical_unit: C
+    allowed_units: [C, K, F]
+    precision: 1
+  - field: volume
+    dimension: volume
+    canonical_unit: L
+    allowed_units: [mL, L, m3]
+    precision: 0
+    rounding: half_up
+  - field: count
+    dimension: count
+    canonical_unit: count
+    allowed_units: [count]
+    precision: 0
+    rounding: half_up

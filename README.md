@@ -26,6 +26,7 @@
 
 - **不是指标口径校准**：不讨论「活跃用户怎么算」等业务定义，只检查物理单位是否合法。
 - **不是实体解析 / 去重**、不是采集管道、不是站点巡检、不是数据脱敏。
+  `merge` 只按显式业务键（默认 `record_id` + 字段名）对齐记录，不做模糊匹配。
 - **不是湖仓版本管理**，也不管理表分层、快照或血缘。
 - **不是通用单位词典**：只做契约与内置注册表声明的闭环换算，不做全量单位库。
 - **不是分布式 / 流式平台**：无消息队列、无外部数据库、无云服务。
@@ -72,10 +73,72 @@ python -m unitcontract serve --host 127.0.0.1 --port 8731 \
 python -m unitcontract validate --contract c.yaml --data d.csv --db ledger.db
 python -m unitcontract convert --contract c.yaml --data d.csv --out normalized.jsonl
 python -m unitcontract report --contract c.yaml --data d.csv --out ./_report_out
+
+# 多站点合并：站点契约/数据对无序，顺序不影响结果
+python -m unitcontract merge \
+  --site site-a a.yaml a.csv \
+  --site site-b b.yaml b.csv \
+  --out merged.jsonl --conflicts conflicts.json
 ```
 
 `validate` 在存在违规行时返回退出码 1，契约 / 数据读取错误返回 2。
 `demo`、`convert`、`report` 成功返回 0。
+`merge` 成功（无真冲突）返回 0，存在真冲突行返回 1，契约或数据错误返回 2。
+退化站点（空 `allowed_units` 或缺失 `defaults`）按现有错误码跳过并计数，不使整批失败。
+
+### 4.1 多站点 merge
+
+`merge` 把多个站点各自契约下 `convert` 得到的规范化记录合并为一份 JSONL，
+并把真正冲突的行单独写成一份清单。
+
+- **业务键**：`(record_id, field)`，`record_id` 默认取数据里已有的 `record_id` 列，
+  可用 `--key` 指定其他列。缺业务键的记录不会跨站点合并，原样输出。
+- **真冲突**：同一业务键在不同站点下，换算后的**精确有理数值**（先各自换到规范单位，
+  再统一换到该量纲基准单位比较）不相等。`canonical_unit` 不同但精确值相等
+  （例如 `1 kJ` 与 `1000 J`）不算冲突。
+- **精度漂移**：规范单位相同、精确值相等，仅因 `precision` / `rounding` 不同导致
+  文本不一致。逐业务键计入 `precision_drift`，保留在合并输出里，绝不进冲突清单。
+- **冲突行**：整行从合并输出中剔除，不静默保留任何一侧；清单里带两侧站点名、
+  原值 / 原单位、各自规范单位 / 规范值、精确值，以及按基准单位比较的精确值对。
+- **可复现**：合并输出每条记录与单站 `convert` 的记录逐字段相同（不含额外字段），
+  规范值逐字节可复现；换算全部复用现有 `Fraction` 注册表与温度偏移路径。
+
+站点对的几种等价写法（可混用，顺序不影响结果）：
+
+```bash
+# 显式站点名
+--site a a.yaml a.csv --site b b.yaml b.csv
+# 从契约 name 推导站点名
+--pair a.yaml a.csv --pair b.yaml b.csv
+# 重复参数
+--contract a.yaml --contract b.yaml --data a.csv --data b.csv
+# 位置参数
+a.yaml a.csv b.yaml b.csv
+```
+
+冲突清单 JSON（`--conflicts`，默认 `<out>.conflicts.json`）结构：
+
+```json
+{
+  "schema_version": "1",
+  "summary": {"conflicts": 1, "precision_drift": 2, "sites_skipped": 1, "...": "..."},
+  "conflicts": [
+    {
+      "record_id": "m002", "field": "energy", "dimension": "energy",
+      "reason": "canonical_unit_conflict",
+      "sites": [
+        {"site": "a", "raw_value": "1", "source_unit": "kWh",
+         "canonical_unit": "J", "canonical_value": "3600000.00", "exact_value": "3600000"},
+        {"site": "b", "raw_value": "2", "source_unit": "kWh",
+         "canonical_unit": "kJ", "canonical_value": "7200.0000", "exact_value": "7200"}
+      ],
+      "pairs": [{"left_site": "a", "right_site": "b",
+                 "left_exact_base": "3600000", "right_exact_base": "7200000"}]
+    }
+  ],
+  "precision_drift": [{"record_id": "m001", "field": "count", "...": "..."}]
+}
+```
 
 ## 4. 契约 YAML 语法
 
@@ -191,12 +254,13 @@ unit-contract/
 │  ├─ logging_utils.py          # 控制台 + 本地文件日志
 │  ├─ contract/                 # schema.py, loader.py, defaults.yaml
 │  ├─ units/                    # registry.py, temperature.py, rounding.py
-│  ├─ engine/                   # reader.py, validator.py, converter.py, auditor.py
+│  ├─ engine/                   # reader.py, validator.py, converter.py, auditor.py,
+│  │                           #   merger.py (multi-site merge)
 │  ├─ ledger/storage.py         # SQLite runs / findings
 │  ├─ report/                   # json_report.py, md_report.py, html_report.py
 │  ├─ server/app.py + static/   # loopback Flask 服务与本地 CSS
-│  └─ fixtures/                 # contracts / data / expected golden
-└─ tests/                       # 11 个测试文件，全部离线
+│  └─ fixtures/                 # contracts / data / merge / expected golden
+└─ tests/                       # 12 个测试文件，全部离线
 ```
 
 `_demo_out/` 与 `_report_out/` 是运行产物，已在 `.gitignore` 中忽略；
@@ -258,6 +322,8 @@ unit-contract/
 - `test_ledger.py`：建表、写入、按 run_id 读回、幂等、删除。
 - `test_reports_golden.py`：JSON 片段与完整 Markdown golden；HTML 自包含检查。
 - `test_cli_demo.py`：临时目录跑 demo、两次输出逐字节一致、convert / validate / report。
+- `test_merger.py`：多站点合并、跨规范单位等价、真冲突清单、精度漂移计数、
+  退化站点跳过、退出码与单站 convert 逐字节等价。
 - `test_server_smoke.py`：Flask `test_client` 冒烟，不监听真实端口。
 
 Golden 使用 `--no-timestamp` 生成。运行 ID 与报告中的契约哈希、数据哈希均来自内容，

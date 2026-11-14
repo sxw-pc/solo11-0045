@@ -1,0 +1,36 @@
+schema_version: "1"
+name: merge-site-b
+description: >
+  Site B merge contract. Deliberately different canonical units and precision
+  from site A so canonical-unit equivalence and precision drift are exercised.
+defaults:
+  precision: 3
+  rounding: half_up
+fields:
+  - field: energy
+    dimension: energy
+    canonical_unit: kJ
+    allowed_units: [J, kJ, kWh, MWh, GJ]
+    precision: 4
+  - field: mass
+    dimension: mass
+    canonical_unit: g
+    allowed_units: [g, kg, t]
+    precision: 1
+  - field: temperature
+    dimension: temperature
+    canonical_unit: K
+    allowed_units: [C, K, F]
+    precision: 2
+  - field: volume
+    dimension: volume
+    canonical_unit: L
+    allowed_units: [mL, L, m3]
+    precision: 0
+    rounding: half_even
+  - field: count
+    dimension: count
+    canonical_unit: count
+    allowed_units: [count]
+    precision: 2
+    rounding: half_even

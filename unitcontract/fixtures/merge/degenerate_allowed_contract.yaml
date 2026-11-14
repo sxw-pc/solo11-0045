@@ -1,0 +1,11 @@
+schema_version: "1"
+name: merge-site-degenerate-allowed
+description: Degenerate site with an empty allowed_units list.
+defaults:
+  precision: 2
+  rounding: half_even
+fields:
+  - field: energy
+    dimension: energy
+    canonical_unit: J
+    allowed_units: []

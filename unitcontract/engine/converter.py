@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from fractions import Fraction
 from typing import Iterable
 
@@ -31,6 +32,12 @@ class ConversionRecord:
     canonical_value: str
     precision: int
     rounding: str
+    # Exact rational after conversion, kept for downstream comparison. It is
+    # intentionally excluded from ``as_dict`` so convert output stays identical.
+    exact_value: Fraction | None = dataclass_field(default=None, compare=False)
+    # Business key copied from the source row for cross-site merging. Also
+    # excluded from ``as_dict`` so single-site convert output is unchanged.
+    record_id: str | None = dataclass_field(default=None, compare=False)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -53,6 +60,17 @@ class ConversionResult:
 
     def as_dicts(self) -> list[dict[str, object]]:
         return [record.as_dict() for record in self.records]
+
+
+def _record_id(row: DataRow, business_key: str) -> str | None:
+    """Read the site-local business key from the raw row, if present."""
+    raw = row.values.get(business_key)
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
 
 
 def convert_value(
@@ -80,6 +98,7 @@ def convert_records(
     contract: Contract,
     rows: Iterable[DataRow],
     registry: UnitRegistry | None = None,
+    business_key: str = "record_id",
 ) -> ConversionResult:
     """Emit normalized records; malformed source fields are skipped.
 
@@ -90,6 +109,7 @@ def convert_records(
     records: list[ConversionRecord] = []
     skipped = 0
     for row in rows:
+        record_id = _record_id(row, business_key)
         for field in contract.fields:
             cell = row.cell(field.field)
             if not cell.has_value or not cell.has_unit:
@@ -97,7 +117,7 @@ def convert_records(
                 continue
             try:
                 value = parse_fraction(cell.value_text)
-                _, rendered = convert_value(field, value, cell.unit_text, registry)
+                exact, rendered = convert_value(field, value, cell.unit_text, registry)
             except (ValueError, ConversionError):
                 skipped += 1
                 continue
@@ -112,6 +132,8 @@ def convert_records(
                     canonical_value=rendered,
                     precision=field.precision,
                     rounding=field.rounding,
+                    exact_value=exact,
+                    record_id=record_id,
                 )
             )
     return ConversionResult(records=tuple(records), skipped=skipped)
