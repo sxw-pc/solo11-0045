@@ -72,10 +72,33 @@ python -m unitcontract serve --host 127.0.0.1 --port 8731 \
 python -m unitcontract validate --contract c.yaml --data d.csv --db ledger.db
 python -m unitcontract convert --contract c.yaml --data d.csv --out normalized.jsonl
 python -m unitcontract report --contract c.yaml --data d.csv --out ./_report_out
+
+# 跨站点批量归一化：每对「站点契约 + 数据」先按各自契约局部校验、换算到
+# 各自 canonical_unit，再统一换算到全局目标单位，输出单份 JSONL
+python -m unitcontract batch-normalize \
+  --pair site-alpha alpha.yaml alpha.csv \
+  --pair site-beta beta.yaml beta.jsonl \
+  --target energy=kWh --target temperature=K \
+  --out batch.jsonl
 ```
 
 `validate` 在存在违规行时返回退出码 1，契约 / 数据读取错误返回 2。
-`demo`、`convert`、`report` 成功返回 0。
+`demo`、`convert`、`report`、`batch-normalize` 成功返回 0，失败返回 2。
+
+### batch-normalize 语义
+
+- `--pair SITE CONTRACT DATA` 可重复，输入顺序任意；输出按站点标识排序，确定可复现。
+- `--target DIMENSION=UNIT` 可重复，指定某量纲的全局目标规范单位；未指定的量纲回退到
+  注册表基准单位。处理任何数据之前先校验每个量纲的目标单位合法，非法直接报错退出（码 2）。
+- 每行输出带 `site`、`raw_value`、`source_unit` 便于回溯；`canonical_unit` / `canonical_value`
+  是该站点契约下的规范值，与单站点 `convert` 的结果逐条一致；`target_unit` / `target_value`
+  是全局目标单位下的值。
+- 换算全程使用精确有理数（含温度偏移路径），只在输出渲染时按**该站点字段自己声明的**
+  `precision` / `rounding` 舍入，站点间的精度差异不会被磨平。
+- 某份契约缺 `defaults`、字段声明顺序不同、或声明了数据里不存在的字段，都不会让整批失败；
+  缺失字段按该站点契约判 `E_MISSING`，对应记录跳过并计数。
+- 结束后在 stderr 打印每个站点的行数、参与数（normalized）、跳过数、总记录数与错误码计数，
+  以及整批合计。
 
 ## 4. 契约 YAML 语法
 
@@ -187,6 +210,7 @@ unit-contract/
 │  ├─ __main__.py / __init__.py
 │  ├─ cli.py                    # 子命令参数与分发
 │  ├─ pipeline.py               # 读取→校验→换算→审计的统一流程
+│  ├─ batch.py                  # 跨站点批量归一化到全局目标单位
 │  ├─ demo.py                   # 合成数据与 demo 编排
 │  ├─ logging_utils.py          # 控制台 + 本地文件日志
 │  ├─ contract/                 # schema.py, loader.py, defaults.yaml
@@ -258,6 +282,8 @@ unit-contract/
 - `test_ledger.py`：建表、写入、按 run_id 读回、幂等、删除。
 - `test_reports_golden.py`：JSON 片段与完整 Markdown golden；HTML 自包含检查。
 - `test_cli_demo.py`：临时目录跑 demo、两次输出逐字节一致、convert / validate / report。
+- `test_batch_normalize.py`：跨站点批量归一化、全局目标单位校验、E_MISSING 计数、
+  与单站点 convert 的一致性、逐站点精度保留、无序输入确定性。
 - `test_server_smoke.py`：Flask `test_client` 冒烟，不监听真实端口。
 
 Golden 使用 `--no-timestamp` 生成。运行 ID 与报告中的契约哈希、数据哈希均来自内容，

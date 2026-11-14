@@ -8,6 +8,7 @@ import socket
 import sys
 from pathlib import Path
 
+from unitcontract.batch import BatchResult, SitePair, parse_target_overrides, run_batch
 from unitcontract.contract.schema import ContractValidationError
 from unitcontract.demo import format_demo_summary, run_demo
 from unitcontract.engine.reader import DataReadError
@@ -100,6 +101,51 @@ def command_convert(args: argparse.Namespace) -> int:
         )
     else:
         sys.stdout.write(content)
+    return 0
+
+
+def _print_batch_summary(result: BatchResult) -> None:
+    targets = " ".join(
+        f"{dimension}:{unit}" for dimension, unit in result.target_units.items()
+    )
+    print(f"targets={targets}", file=sys.stderr)
+    for site in result.sites:
+        line = (
+            f"site={site.site} rows={site.rows_total} "
+            f"normalized={len(site.records)} skipped={site.skipped} total={site.total}"
+        )
+        if site.code_counts:
+            line += " codes=" + " ".join(
+                f"{code}:{count}" for code, count in site.code_counts.items()
+            )
+        print(line, file=sys.stderr)
+    print(
+        f"batch sites={len(result.sites)} records={len(result.records)} "
+        f"skipped={result.skipped} total={result.total}",
+        file=sys.stderr,
+    )
+
+
+def command_batch_normalize(args: argparse.Namespace) -> int:
+    overrides = parse_target_overrides(args.targets)
+    pairs = [
+        SitePair(site=site, contract_path=contract, data_path=data)
+        for site, contract, data in args.pairs
+    ]
+    result = run_batch(pairs, overrides)
+    lines = [
+        json.dumps(record.as_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        for record in result.records
+    ]
+    content = "\n".join(lines) + ("\n" if lines else "")
+    if args.out:
+        output_path = Path(args.out)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(content, encoding="utf-8", newline="\n")
+        print(f"wrote={output_path.resolve()}", file=sys.stderr)
+    else:
+        sys.stdout.write(content)
+    _print_batch_summary(result)
     return 0
 
 
@@ -198,6 +244,31 @@ def build_parser() -> argparse.ArgumentParser:
     _add_data_args(convert)
     convert.add_argument("--out", help="JSONL output path; stdout when omitted")
     convert.set_defaults(func=command_convert)
+
+    batch = subparsers.add_parser(
+        "batch-normalize",
+        help="normalize multiple site contract/data pairs to global target units",
+    )
+    batch.add_argument(
+        "--pair",
+        nargs=3,
+        action="append",
+        required=True,
+        metavar=("SITE", "CONTRACT", "DATA"),
+        help="site label with its contract YAML and data file; repeatable",
+        dest="pairs",
+    )
+    batch.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        metavar="DIMENSION=UNIT",
+        help="global target unit for a dimension; repeatable; "
+        "defaults to the registry base unit",
+        dest="targets",
+    )
+    batch.add_argument("--out", help="JSONL output path; stdout when omitted")
+    batch.set_defaults(func=command_batch_normalize)
 
     report = subparsers.add_parser("report", help="run and write json/md/html reports")
     _add_data_args(report)

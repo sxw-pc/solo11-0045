@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### 已实现
+
+- 新增 `batch-normalize` 子命令：接收任意顺序的 `--pair SITE CONTRACT DATA` 站点对，
+  每份数据先按自己契约做局部校验并换算到该契约的 `canonical_unit`，再统一换算到
+  `--target DIMENSION=UNIT` 指定的全局目标规范单位（未指定的量纲回退到注册表基准单位；
+  目标单位先验校验，非法直接以退出码 2 报错），输出单份 JSONL。
+- 批量输出行携带 `site`、`raw_value`、`source_unit` 回溯信息；`canonical_value` 与单站点
+  `convert` 结果逐条一致；全局值由精确 `Fraction` 两跳换算（含温度偏移路径）后按各站点
+  字段自己声明的 `precision` / `rounding` 渲染，不磨平站点间精度差异。
+- 契约缺 `defaults`、字段声明顺序不同、声明了数据中不存在的字段均不使整批失败；
+  缺失字段按该站点契约判 `E_MISSING` 跳过并计数，结束后打印每站点参与数、跳过数、
+  总记录数与整批合计。
+
 ## v0.1.0 — 初始版本
 
 ### 已实现
