@@ -78,3 +78,113 @@ def test_cli_rejects_bad_contract(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text("name: broken\nfields: []\n", encoding="utf-8")
     assert main(["validate", "--contract", str(bad), "--data", str(DATA)]) == 2
+
+
+def _fingerprint_of(out_dir: Path) -> str:
+    payload = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    return payload["extensions"]["contract_fingerprint"]["value"]
+
+
+def test_equivalent_contracts_share_fingerprint_end_to_end(tmp_path):
+    """Demo contract, a comment/order-only copy, an overlay rewrite and a
+    hand-composed equivalent must all produce one fingerprint, while the raw
+    byte hash still distinguishes them."""
+    import yaml
+
+    base_text = CONTRACT.read_text(encoding="utf-8")
+    base_payload = yaml.safe_load(base_text)
+    base_path = tmp_path / "base.yaml"
+    base_path.write_text(base_text, encoding="utf-8")
+
+    only_cosmetics = tmp_path / "copy.yaml"
+    reordered = dict(base_payload)
+    reordered["fields"] = list(reversed(base_payload["fields"]))
+    only_cosmetics.write_text(
+        "# only comments and field order differ\n\n"
+        + yaml.safe_dump(reordered, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text(
+        yaml.safe_dump(
+            {
+                "fields": [
+                    {
+                        "field": field["field"],
+                        "allowed_units": list(reversed(field["allowed_units"])),
+                    }
+                    for field in reversed(base_payload["fields"])
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    composed = tmp_path / "composed.yaml"
+    composed.write_text(
+        "# hand composed, defaults expanded, fields and units reordered\n"
+        + yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "name": "hand-composed",
+                "description": "independently written equivalent",
+                "fields": [
+                    dict(field, allowed_units=list(reversed(field["allowed_units"])))
+                    for field in reversed(base_payload["fields"])
+                ],
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    db_path = tmp_path / "ledger.db"
+    fingerprints = {}
+    raw_hashes = {}
+    for name, contract, extra in (
+        ("base", base_path, []),
+        ("copy", only_cosmetics, []),
+        ("overlay", base_path, ["--overlay", str(overlay)]),
+        ("composed", composed, []),
+    ):
+        out_dir = tmp_path / f"out_{name}"
+        argv = [
+            "report", "--contract", str(contract), *extra, "--data", str(DATA),
+            "--out", str(out_dir), "--no-timestamp", "--max-details", "0",
+            "--db", str(db_path),
+        ]
+        assert main(argv) == 0
+        # validate must run cleanly too (exit 1 because the fixture has violations)
+        validate_argv = [
+            "validate", "--contract", str(contract), *extra, "--data", str(DATA),
+            "--no-timestamp", "--max-details", "0",
+        ]
+        assert main(validate_argv) == 1
+        fingerprints[name] = _fingerprint_of(out_dir)
+        raw_hashes[name] = json.loads(
+            (out_dir / "report.json").read_text(encoding="utf-8")
+        )["run"]["contract_hash"]
+
+    assert len(set(fingerprints.values())) == 1
+    assert fingerprints["base"] != raw_hashes["base"]  # different algorithms/spaces
+    assert len(set(raw_hashes.values())) == 4  # byte-level provenance preserved
+
+    # Repeat one contract: identical fingerprint and identical JSON report.
+    repeat_dir = tmp_path / "out_repeat"
+    assert main([
+        "report", "--contract", str(base_path), "--data", str(DATA),
+        "--out", str(repeat_dir), "--no-timestamp", "--max-details", "0",
+    ]) == 0
+    assert _fingerprint_of(repeat_dir) == fingerprints["base"]
+    assert (repeat_dir / "report.json").read_bytes() == (
+        tmp_path / "out_base" / "report.json"
+    ).read_bytes()
+
+    # Ledger groups all four equivalent runs under one fingerprint.
+    from unitcontract.ledger.storage import find_runs_by_fingerprint
+
+    grouped = find_runs_by_fingerprint(db_path, fingerprints["base"])
+    assert {row["contract_hash"] for row in grouped} == set(raw_hashes.values())

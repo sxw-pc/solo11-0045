@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from unitcontract.contract.fingerprint import compute_fingerprint
 from unitcontract.contract.loader import contract_sha256, load_contract
 from unitcontract.contract.schema import Contract
 from unitcontract.engine.auditor import AuditReport, audit_validation
@@ -25,6 +26,7 @@ class RunResult:
     contract_path: str
     data_path: str
     contract_hash: str
+    contract_fingerprint: str
     data_hash: str
     source_name: str
     data_format: str
@@ -77,15 +79,17 @@ def execute(
     no_timestamp: bool = False,
     registry: UnitRegistry | None = None,
     limit: int | None = None,
+    overlay_path: str | Path | None = None,
 ) -> RunResult:
     """Run the full read → validate → convert → audit pipeline."""
     registry = registry or UnitRegistry.bundled()
     contract_file = Path(contract_path)
     data_file = Path(data_path)
-    contract = load_contract(contract_file, registry=registry)
+    contract = load_contract(contract_file, registry=registry, overlay_path=overlay_path)
     fmt = detect_format(data_file) if data_format == "auto" else data_format.lower()
     rows = read_rows(data_file, data_format=fmt, limit=limit)
-    contract_hash = contract_sha256(contract_file)
+    contract_hash = contract_sha256(contract_file, overlay_path=overlay_path)
+    contract_fingerprint = compute_fingerprint(contract, registry=registry)
     data_hash = hashlib.sha256(data_file.read_bytes()).hexdigest()
     source_name = data_file.name
 
@@ -101,6 +105,7 @@ def execute(
         contract_path=str(contract_file.resolve()),
         data_path=str(data_file.resolve()),
         contract_hash=contract_hash,
+        contract_fingerprint=contract_fingerprint,
         data_hash=data_hash,
         source_name=source_name,
         data_format=fmt,

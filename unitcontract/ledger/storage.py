@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS runs (
     created_at TEXT,
     contract_name TEXT NOT NULL,
     contract_hash TEXT NOT NULL,
+    contract_fingerprint TEXT,
     data_hash TEXT NOT NULL,
     source_name TEXT NOT NULL,
     data_format TEXT NOT NULL,
@@ -50,6 +51,31 @@ CREATE TABLE IF NOT EXISTS findings (
 CREATE INDEX IF NOT EXISTS idx_findings_run ON findings(run_id, row_num, id);
 """
 
+#: Indexes over columns added after schema version "1".  They are created only
+#: after the in-place migration below, so old ledgers without those columns
+#: still open cleanly.
+_POST_MIGRATION_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_runs_contract_fingerprint "
+    "ON runs(contract_fingerprint);",
+)
+
+#: Columns added after schema version "1" was first shipped.  Existing local
+#: ledgers are migrated in place so old rows keep working; their
+#: ``contract_fingerprint`` stays NULL until a run is repeated.
+_ADDED_COLUMNS = {
+    "runs": {"contract_fingerprint": "TEXT"},
+}
+
+
+def _migrate(connection: sqlite3.Connection) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {
+            row["name"] for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        for name, decl in columns.items():
+            if name not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
 
 def _connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
@@ -63,6 +89,9 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
 def init_db(db_path: str | Path) -> None:
     with _connect(db_path) as connection:
         connection.executescript(_SCHEMA)
+        _migrate(connection)
+        for statement in _POST_MIGRATION_INDEXES:
+            connection.execute(statement)
 
 
 def save_run(result: Any, db_path: str | Path, report_dir: str | Path | None = None) -> str:
@@ -76,17 +105,19 @@ def save_run(result: Any, db_path: str | Path, report_dir: str | Path | None = N
         connection.execute(
             """
             INSERT OR REPLACE INTO runs (
-                run_id, created_at, contract_name, contract_hash, data_hash,
+                run_id, created_at, contract_name, contract_hash,
+                contract_fingerprint, data_hash,
                 source_name, data_format, rows_total, passed_rows,
                 violation_rows, warning_rows, error_findings, warning_findings,
                 summary_json, contract_json, report_dir, schema_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result.run_id,
                 created_at,
                 result.contract.name,
                 result.contract_hash,
+                getattr(result, "contract_fingerprint", None),
                 result.data_hash,
                 result.source_name,
                 result.data_format,
@@ -131,11 +162,15 @@ def save_run(result: Any, db_path: str | Path, report_dir: str | Path | None = N
 
 
 def _summary_row(row: sqlite3.Row) -> dict[str, Any]:
+    keys = row.keys()
     return {
         "run_id": row["run_id"],
         "created_at": row["created_at"],
         "contract_name": row["contract_name"],
         "contract_hash": row["contract_hash"],
+        "contract_fingerprint": (
+            row["contract_fingerprint"] if "contract_fingerprint" in keys else None
+        ),
         "data_hash": row["data_hash"],
         "source_name": row["source_name"],
         "data_format": row["data_format"],
@@ -190,6 +225,33 @@ def get_run(db_path: str | Path, run_id: str) -> dict[str, Any] | None:
         }
     )
     return payload
+
+
+def find_runs_by_fingerprint(
+    db_path: str | Path,
+    contract_fingerprint: str,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """List runs that share a semantic contract fingerprint.
+
+    Byte-different but semantically equivalent contracts still have distinct
+    ``run_id`` values (``run_id`` is derived from the raw hash for backward
+    compatibility); this lookup is how historical runs are grouped.
+    """
+    init_db(db_path)
+    limit = max(0, min(limit, 200))
+    with _connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM runs
+            WHERE contract_fingerprint = ?
+            ORDER BY COALESCE(created_at, '') DESC, run_id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (contract_fingerprint, limit, max(0, offset)),
+        ).fetchall()
+    return [_summary_row(row) for row in rows]
 
 
 def get_findings(

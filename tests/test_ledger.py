@@ -74,3 +74,53 @@ def test_missing_run(result, tmp_path):
     assert get_run(db_path, "not-a-run") is None
     assert list_runs(db_path) == []
     assert delete_run(db_path, "not-a-run") is False
+
+
+def test_fingerprint_is_stored_next_to_raw_hash(result, tmp_path):
+    db_path = tmp_path / "ledger.db"
+    run_id = save_run(result, db_path)
+    stored = get_run(db_path, run_id)
+    assert stored["contract_hash"] == result.contract_hash
+    assert stored["contract_fingerprint"] == result.contract_fingerprint
+    assert stored["contract_fingerprint"] != stored["contract_hash"]
+    listed = list_runs(db_path)[0]
+    assert listed["contract_fingerprint"] == result.contract_fingerprint
+
+
+def test_old_ledger_without_fingerprint_column_is_migrated(result, tmp_path):
+    """A ledger created before the column existed must open and keep old rows."""
+    db_path = tmp_path / "old.db"
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        CREATE TABLE runs (
+            run_id TEXT PRIMARY KEY, created_at TEXT, contract_name TEXT NOT NULL,
+            contract_hash TEXT NOT NULL, data_hash TEXT NOT NULL,
+            source_name TEXT NOT NULL, data_format TEXT NOT NULL,
+            rows_total INTEGER NOT NULL, passed_rows INTEGER NOT NULL,
+            violation_rows INTEGER NOT NULL, warning_rows INTEGER NOT NULL,
+            error_findings INTEGER NOT NULL, warning_findings INTEGER NOT NULL,
+            summary_json TEXT NOT NULL, contract_json TEXT NOT NULL,
+            report_dir TEXT, schema_version TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "legacy-run", None, "legacy", "legacy-hash", "legacy-data",
+            "old.csv", "csv", 1, 1, 0, 0, 0, 0, "{}", "{}", None, "1",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    init_db(db_path)  # must add the column without error
+    legacy = get_run(db_path, "legacy-run")
+    assert legacy is not None
+    assert legacy["contract_hash"] == "legacy-hash"
+    assert legacy["contract_fingerprint"] is None
+
+    save_run(result, db_path)  # new runs populate the new column
+    stored = get_run(db_path, result.run_id)
+    assert stored["contract_fingerprint"] == result.contract_fingerprint

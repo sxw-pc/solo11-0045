@@ -72,6 +72,9 @@ python -m unitcontract serve --host 127.0.0.1 --port 8731 \
 python -m unitcontract validate --contract c.yaml --data d.csv --db ledger.db
 python -m unitcontract convert --contract c.yaml --data d.csv --out normalized.jsonl
 python -m unitcontract report --contract c.yaml --data d.csv --out ./_report_out
+
+# overlay 按字段名覆盖后同样可跑三个命令
+python -m unitcontract report --contract c.yaml --overlay o.yaml --data d.csv --out ./_report_out
 ```
 
 `validate` 在存在违规行时返回退出码 1，契约 / 数据读取错误返回 2。
@@ -212,7 +215,8 @@ unit-contract/
 |---|---|
 | `run_id` | 由契约哈希、数据哈希、契约名等派生的 16 位稳定 ID |
 | `created_at` | UTC 时间；`--no-timestamp` 时为 NULL |
-| `contract_name` / `contract_hash` | 契约名与原始 YAML 字节的 SHA-256 |
+| `contract_name` / `contract_hash` | 契约名与原始 YAML 字节的 SHA-256（保持不变，兼容老台账） |
+| `contract_fingerprint` | 契约的**语义指纹**（见 8.1；老台账迁移后新增列，历史行为 NULL） |
 | `data_hash` / `source_name` | 数据字节哈希与文件名 |
 | `data_format` | `csv` / `jsonl` |
 | `rows_total` / `passed_rows` / `violation_rows` | 行级统计 |
@@ -231,6 +235,39 @@ unit-contract/
 | `category` / `cause` / `suggestion` | 固定归因目录中的分类、原因、建议 |
 
 同一 `run_id` 再次落库会原子替换旧 findings，不会重复累积。
+`find_runs_by_fingerprint(db, fp)` 按语义指纹归并历史 run（`run_id` 仍由原始哈希派生，因此等价契约的 run_id 不同）。
+
+### 8.1 契约语义指纹 `contract_fingerprint`
+
+`contract_hash` 是对契约源文件字节做 SHA-256，只回答「这份文件是否一字不差」。
+台账另有 `contract_fingerprint`，回答「这两份契约的有效字段配置是否相同」：
+
+- 输入：**已合并 defaults、已通过 schema 校验**的 `Contract` 模型，而不是源字节。
+- 输出：规范化 JSON（键排序、无空白、UTF-8）的 SHA-256，加领域前缀
+  `unitcontract/contract-fingerprint/v1\n` 防止与原始字节哈希混淆。
+- 归一化规则：
+  - `defaults` 先展开进每个字段，继承值与显式写出的同值不可区分；
+  - 字段按字段名升序；YAML 声明顺序、注释、空行、flow/block 风格不影响；
+  - `allowed_units` 去重后排序，列表顺序与重复条目不影响；
+  - 数值（`range` 边界）用 `Fraction` 解析为精确有理数再序列化
+    （`<分子>` 或 `<分子>/<分母>`），`60`、`60.0`、`6e1`、`60/1` 等价；
+  - `range` 边界按 `canonical_unit` 换算到该量纲的基准单位（温度统一到 K）后比较；
+  - `schema_version`、字段名、量纲、`canonical_unit`、精度、舍入都参与指纹。
+- **不参与**：契约 `name`、`description`、未知顶层键——它们描述文档身份/说明，不描述字段配置。
+- 温度 range 判定口径（明确选择）：**`canonical_unit` 不同即判为不等价**。
+  `range` 边界在 schema 中没有单位标注，一律按 `canonical_unit` 解释；`canonical_unit`
+  决定校验时 range 的解释与报告输出单位，因此把 `C + [-50, 60]` 与 `K + [223.15, 333.15]`
+  视为不同指纹，即使换算到 K 后的物理区间完全一致。相同 `canonical_unit` 下，
+  边界仅写法不同（如 `-50` 与 `-50.0`）会归一为同一 K 表示而等价。
+- 退化契约不崩：`allowed_units` 为空序列化为 `[]`，无 `range` 或单侧缺失序列化为 `null`，
+  无字段的空契约也照常计算（经 `load_contract` 时前者仍会按既有错误码被拒绝）。
+- 向后兼容：`contract_hash` 列、报告 `run.contract_hash`、`run_id` 派生方式**全部不变**，
+  老 golden 报告继续逐字节通过；新指纹只出现在 Ledger 新列与 JSON 报告的
+  `extensions.contract_fingerprint`（含 `value`、`algorithm`、`version`、
+  `raw_contract_hash` 及机器可读 `spec`）。老台账打开时自动 `ALTER TABLE` 补列，
+  历史行该列为 NULL。
+- `--overlay` 可用时，原始哈希把 base 与 overlay 的字节一起带域分隔哈希；
+  不带 overlay 时与历史 `sha256(file)` 完全一致。
 
 ## 9. 明确不实现
 

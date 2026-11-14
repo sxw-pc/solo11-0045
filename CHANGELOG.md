@@ -1,11 +1,37 @@
 # Changelog
 
+## v0.1.1 — 契约语义指纹
+
+### 新增
+
+- 台账 `runs.contract_fingerprint`：基于规范化语义（defaults 展开、字段名排序、
+  `allowed_units` 去重排序、数值精确有理化、`range` 换算到量纲基准单位）的 SHA-256 指纹。
+- `unitcontract.contract.fingerprint`：`compute_fingerprint` / `build_fingerprint_payload`
+  与机器可读 `FINGERPRINT_SPEC`（判定口径）。
+- JSON 报告 `extensions.contract_fingerprint` 扩展段：语义指纹 + 原始字节哈希，
+  既有 `run` / `contract` / `summary` 结构不变。
+- `--overlay` 参数可用于 `validate` / `convert` / `report`；带 overlay 时原始哈希按
+  base+overlay 字节做域分隔哈希。
+- `find_runs_by_fingerprint`：按语义指纹归并历史 run。
+- 老台账自动迁移：`init_db` 检测并 `ALTER TABLE` 补 `contract_fingerprint` 列，历史行为 NULL。
+
+### 明确的口径
+
+- 温度 range：换算到 K 后比较，但 `canonical_unit` 不同即判不等价（它影响校验与输出语义）。
+- `name` / `description` / 注释 / 字段顺序 / `allowed_units` 顺序 / 未知顶层键不参与指纹。
+
+### 不变
+
+- `contract_hash`、`run_id` 派生方式、`validate` / `convert` / `report` 的字段结构、
+  错误码、退出码、Markdown / HTML 报告格式与全部 golden 均保持原样。
+
 ## v0.1.0 — 初始版本
 
 ### 已实现
 
 - 声明式 YAML 量纲契约：字段、量纲、规范单位、允许单位、精度、舍入模式、物理范围。
 - 契约 schema 严格校验，稳定错误码并定位到文件、字段和下标。
+- 契约语义指纹（`contract_fingerprint`），与原始字节哈希并存。
 - 精确有理数单位注册表（`fractions.Fraction`），覆盖长度、质量、能量、功率、时间、体积、计数与温度。
 - 独立的 C/K/F 偏移换算路径，含绝对零度校验；温度范围在规范单位下判断。
 - CSV / JSONL 逐行校验：缺失、非数值、单位缺失、单位未知、量纲不匹配、单位不允许、越界、精度警告。

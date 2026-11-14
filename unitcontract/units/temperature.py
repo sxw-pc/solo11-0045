@@ -25,6 +25,21 @@ def _ensure_unit(unit: str) -> None:
         raise TemperatureError("E_UNIT_UNKNOWN", f"unknown temperature unit: {unit}")
 
 
+def to_kelvin_unchecked(value: Fraction, unit: str) -> Fraction:
+    """Convert to kelvin without the absolute-zero guard.
+
+    Used where a value is a contract parameter rather than a measurement, such
+    as a declared range bound, so that fingerprints stay computable for any
+    schema-valid range.
+    """
+    _ensure_unit(unit)
+    if unit == "K":
+        return value
+    if unit == "C":
+        return value + _CELSIUS_OFFSET
+    return (value - _FAHRENHEIT_OFFSET) * _FAHRENHEIT_SCALE + _CELSIUS_OFFSET
+
+
 def to_kelvin(value: Fraction, unit: str) -> Fraction:
     """Convert a temperature to kelvin using exact rational arithmetic."""
     _ensure_unit(unit)

@@ -107,9 +107,25 @@ def load_contract(
     return build_contract(payload, str(contract_path), registry=registry)
 
 
-def contract_sha256(path: str | Path) -> str:
-    """Hash the contract bytes so every ledger row can be reproduced exactly."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def contract_sha256(path: str | Path, overlay_path: str | Path | None = None) -> str:
+    """Hash the contract source bytes.
+
+    Without an overlay this is exactly the historical ``sha256(file bytes)``,
+    so existing ledger rows stay comparable.  With an overlay the base and
+    overlay bytes are hashed together with a domain separator: two different
+    overlays over the same base then have different raw hashes, and the
+    combined hash can never collide with a plain-file hash.
+    """
+    base_bytes = Path(path).read_bytes()
+    if overlay_path is None:
+        return hashlib.sha256(base_bytes).hexdigest()
+    overlay_bytes = Path(overlay_path).read_bytes()
+    digest = hashlib.sha256()
+    digest.update(b"unitcontract/contract-raw+overlay/v1\0")
+    digest.update(base_bytes)
+    digest.update(b"\0")
+    digest.update(overlay_bytes)
+    return digest.hexdigest()
 
 
 def data_sha256(path: str | Path) -> str:

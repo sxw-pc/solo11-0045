@@ -66,3 +66,24 @@ def test_markdown_detail_is_truncated(result):
     assert "仅显示前 2 条，共 114 条规范化记录" in text
     assert "| 2 | mass | E_UNIT_NOT_ALLOWED |" in text
     assert "| 3 | energy | E_OUT_OF_RANGE |" not in text
+
+
+def test_fingerprint_lives_only_in_extension_section(result):
+    """Legacy `run` fields are byte-for-byte unchanged; new data is additive."""
+    report = build_json_report(result)
+    assert "contract_fingerprint" not in report["run"]
+    assert set(report["run"]) == set(
+        json.loads((EXPECTED / "report_snippet.json").read_text(encoding="utf-8"))["run"]
+    )
+    extension = report["extensions"]["contract_fingerprint"]
+    assert extension["value"] == result.contract_fingerprint
+    assert extension["raw_contract_hash"] == result.contract_hash
+    assert extension["algorithm"] == "sha256"
+    assert extension["spec"]["temperature_range_equivalence"].startswith(
+        "not_equivalent_when_canonical_unit_differs"
+    )
+    # Markdown and HTML golden layouts stay untouched: no new sections.
+    markdown = render_markdown(result)
+    assert "fingerprint" not in markdown.lower()
+    html = render_html(result)
+    assert "fingerprint" not in html.lower()
