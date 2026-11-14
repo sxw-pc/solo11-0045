@@ -1,5 +1,16 @@
 # Changelog
 
+## 未发布
+
+### 新增
+
+- `convert --rejected-out PATH`：严格落盘模式。换算结果拆分为 normalized JSONL
+  （仅含通过契约校验的单元格，行字段结构不变）与 rejected JSONL 明细；每条
+  rejected 记录带行号、来源文件、字段名、原始值/原始单位、错误码与说明，
+  越界单元格额外附换算后的规范值。分类直接复用 `validate_field`，与
+  `validate` 的结论逐格一致；strict 模式下 `skipped` 与 rejected 行数严格相等。
+  不加该开关时 `convert` 输出与历史版本逐字节相同。
+
 ## v0.1.0 — 初始版本
 
 ### 已实现

@@ -77,6 +77,7 @@ def execute(
     no_timestamp: bool = False,
     registry: UnitRegistry | None = None,
     limit: int | None = None,
+    strict_conversion: bool = False,
 ) -> RunResult:
     """Run the full read → validate → convert → audit pipeline."""
     registry = registry or UnitRegistry.bundled()
@@ -90,7 +91,13 @@ def execute(
     source_name = data_file.name
 
     validation = validate_records(contract, rows, registry=registry)
-    conversion = convert_records(contract, rows, registry=registry)
+    conversion = convert_records(
+        contract,
+        rows,
+        registry=registry,
+        strict=strict_conversion,
+        source_name=source_name,
+    )
     audit = audit_validation(validation)
     generated_at = None
     if not no_timestamp:

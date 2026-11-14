@@ -4,6 +4,7 @@ from .converter import (
     ConversionError,
     ConversionRecord,
     ConversionResult,
+    RejectedRecord,
     convert_records,
     convert_value,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "DataRow",
     "FieldCell",
     "Finding",
+    "RejectedRecord",
     "ValidationResult",
     "convert_records",
     "convert_value",

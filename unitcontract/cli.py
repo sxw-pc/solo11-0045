@@ -83,23 +83,50 @@ def command_validate(args: argparse.Namespace) -> int:
     return 1 if result.validation.violating_rows else 0
 
 
-def command_convert(args: argparse.Namespace) -> int:
-    result = execute(args.contract, args.data, data_format=args.data_format)
+def _jsonl_content(payloads: list[dict[str, object]]) -> str:
     lines = [
-        json.dumps(record.as_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        for record in result.conversion.records
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        for payload in payloads
     ]
-    content = "\n".join(lines) + ("\n" if lines else "")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def _write_text(path: str, content: str) -> Path:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content, encoding="utf-8", newline="\n")
+    return output_path
+
+
+def command_convert(args: argparse.Namespace) -> int:
+    if args.rejected_out and args.out:
+        if Path(args.rejected_out).resolve() == Path(args.out).resolve():
+            print("error: --out and --rejected-out must be different files", file=sys.stderr)
+            return 2
+    result = execute(
+        args.contract,
+        args.data,
+        data_format=args.data_format,
+        strict_conversion=bool(args.rejected_out),
+    )
+    content = _jsonl_content(result.conversion.as_dicts())
     if args.out:
-        output_path = Path(args.out)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(content, encoding="utf-8", newline="\n")
+        output_path = _write_text(args.out, content)
         print(
-            f"wrote={output_path.resolve()} records={len(lines)} skipped={result.conversion.skipped}",
+            f"wrote={output_path.resolve()} records={len(result.conversion.records)} "
+            f"skipped={result.conversion.skipped}",
             file=sys.stderr,
         )
     else:
         sys.stdout.write(content)
+    if args.rejected_out:
+        rejected_path = _write_text(
+            args.rejected_out, _jsonl_content(result.conversion.rejected_as_dicts())
+        )
+        print(
+            f"rejects={rejected_path.resolve()} rejected={len(result.conversion.rejected)}",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -197,6 +224,11 @@ def build_parser() -> argparse.ArgumentParser:
     convert = subparsers.add_parser("convert", help="emit normalized records as JSONL")
     _add_data_args(convert)
     convert.add_argument("--out", help="JSONL output path; stdout when omitted")
+    convert.add_argument(
+        "--rejected-out",
+        help="also write per-cell rejected details as JSONL (strict mode: "
+        "skipped equals the rejected line count)",
+    )
     convert.set_defaults(func=command_convert)
 
     report = subparsers.add_parser("report", help="run and write json/md/html reports")

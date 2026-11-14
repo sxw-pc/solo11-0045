@@ -77,6 +77,37 @@ python -m unitcontract report --contract c.yaml --data d.csv --out ./_report_out
 `validate` 在存在违规行时返回退出码 1，契约 / 数据读取错误返回 2。
 `demo`、`convert`、`report` 成功返回 0。
 
+### convert 的 rejected 明细落盘（`--rejected-out`）
+
+默认情况下 `convert` 只输出能规范化的行，被跳过的单元格仅汇总为一个
+`skipped` 计数。加上 `--rejected-out` 后进入严格模式，换算结果拆成两类产物：
+
+```bash
+python -m unitcontract convert --contract c.yaml --data d.csv \
+  --out normalized.jsonl --rejected-out rejected.jsonl
+```
+
+- `normalized.jsonl`：只含通过契约校验的单元格，每行字段结构与默认模式完全相同。
+- `rejected.jsonl`：逐行落盘的拒绝明细，与 `validate` 的结论逐格一致——
+  `validate` 判为错误的 (行, 字段) 必然出现在这里，校验通过的单元格绝不出现。
+
+每条 rejected 记录的字段：
+
+| 键 | 说明 |
+|---|---|
+| `row` | 数据记录序号（与报告中的 `row` 同口径） |
+| `source` | 来源数据文件名 |
+| `field` / `dimension` | 字段名与量纲 |
+| `code` / `message` | 命中的错误码与说明（与 `validate` 输出一致） |
+| `raw_value` / `raw_unit` | 原始值与原始单位（缺失时为 `null`） |
+| `canonical_unit` | 契约声明的规范单位 |
+| `canonical_value` | 换算后的规范值；仅当值本身能换算（即越界 `E_OUT_OF_RANGE`）时给出，其余错误为 `null` |
+
+空值（`E_MISSING`）、缺单位（`E_UNIT_MISSING`）、单位非法（`E_UNIT_UNKNOWN` /
+`E_UNIT_DIM_MISMATCH` / `E_UNIT_NOT_ALLOWED`）等失败路径都会落入 rejected。
+严格模式下 stderr 中的 `skipped` 与 rejected 行数严格相等，不存在静默丢弃。
+不加 `--rejected-out` 时，`convert` 的输出与历史版本逐字节相同。
+
 ## 4. 契约 YAML 语法
 
 ```yaml
@@ -196,7 +227,7 @@ unit-contract/
 │  ├─ report/                   # json_report.py, md_report.py, html_report.py
 │  ├─ server/app.py + static/   # loopback Flask 服务与本地 CSS
 │  └─ fixtures/                 # contracts / data / expected golden
-└─ tests/                       # 11 个测试文件，全部离线
+└─ tests/                       # 12 个测试文件，全部离线
 ```
 
 `_demo_out/` 与 `_report_out/` 是运行产物，已在 `.gitignore` 中忽略；
@@ -254,6 +285,7 @@ unit-contract/
 - `test_temperature.py`：C/K/F 两两换算、绝对零点与越界、规范单位范围。
 - `test_validator.py`：缺失、非数值、单位缺失/未知/不允许、量纲错配、范围、精度警告。
 - `test_converter.py`：换算确定性、三种舍入、非法值跳过、温度路径。
+- `test_convert_rejects.py`：严格模式 rejected 明细、与 validate 逐格一致、skipped 对齐、旧输出逐字节不变。
 - `test_auditor.py`：错误码归因、计数、Top-N、空结果。
 - `test_ledger.py`：建表、写入、按 run_id 读回、幂等、删除。
 - `test_reports_golden.py`：JSON 片段与完整 Markdown golden；HTML 自包含检查。
