@@ -23,6 +23,10 @@ def _add_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--contract", required=True, help="contract YAML path")
     parser.add_argument("--data", required=True, help="CSV or JSONL data path")
     parser.add_argument(
+        "--overlay",
+        help="optional overlay contract YAML; only its explicit keys override the base",
+    )
+    parser.add_argument(
         "--format", default="auto", choices=["auto", "csv", "jsonl"], dest="data_format"
     )
 
@@ -77,6 +81,7 @@ def command_validate(args: argparse.Namespace) -> int:
         args.data,
         data_format=args.data_format,
         no_timestamp=args.no_timestamp,
+        overlay_path=args.overlay,
     )
     _print_summary(result, max_details=args.max_details)
     _save_if_requested(result, args.db)
@@ -84,7 +89,12 @@ def command_validate(args: argparse.Namespace) -> int:
 
 
 def command_convert(args: argparse.Namespace) -> int:
-    result = execute(args.contract, args.data, data_format=args.data_format)
+    result = execute(
+        args.contract,
+        args.data,
+        data_format=args.data_format,
+        overlay_path=args.overlay,
+    )
     lines = [
         json.dumps(record.as_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         for record in result.conversion.records
@@ -111,6 +121,7 @@ def command_report(args: argparse.Namespace) -> int:
         args.data,
         data_format=args.data_format,
         no_timestamp=args.no_timestamp,
+        overlay_path=args.overlay,
     )
     run_dir = out_dir / "runs" / result.run_id
     write_reports(result, run_dir, max_details=args.max_details)

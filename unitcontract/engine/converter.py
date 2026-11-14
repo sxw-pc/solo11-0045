@@ -7,9 +7,10 @@ from fractions import Fraction
 from typing import Iterable
 
 from unitcontract.contract.schema import Contract, ContractField
+from unitcontract.engine.canonical import resolve_canonical
 from unitcontract.engine.reader import DataRow
 from unitcontract.units.registry import UnitRegistry, UnknownUnitError
-from unitcontract.units.rounding import format_fraction, parse_fraction
+from unitcontract.units.rounding import parse_fraction
 from unitcontract.units.temperature import TemperatureError
 
 
@@ -61,7 +62,11 @@ def convert_value(
     unit: str,
     registry: UnitRegistry,
 ) -> tuple[Fraction, str]:
-    """Convert one value and render it with the contract's rounding policy."""
+    """Convert one value and render it with the contract's rounding policy.
+
+    Returns the exact canonical rational and the canonical text. The exact
+    value is the same one validation compares against the declared range.
+    """
     try:
         registry.get_unit(field.dimension, unit)
     except UnknownUnitError as exc:
@@ -69,11 +74,10 @@ def convert_value(
     if unit not in field.allowed_units:
         raise ConversionError("E_UNIT_NOT_ALLOWED", f"unit {unit} is not allowed")
     try:
-        converted = registry.convert(value, field.dimension, unit, field.canonical_unit)
+        canonical = resolve_canonical(field, value, unit, registry)
     except TemperatureError as exc:
         raise ConversionError(exc.code, exc.message) from exc
-    rendered = format_fraction(converted, field.precision, field.rounding)
-    return converted, rendered
+    return canonical.exact, canonical.rendered
 
 
 def convert_records(

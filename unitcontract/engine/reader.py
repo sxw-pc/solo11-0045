@@ -68,6 +68,33 @@ def _has_value(value: Any) -> bool:
     return True
 
 
+def _blank_scalar(value: Any) -> bool:
+    """True for ``None`` and whitespace-only text, False for real values."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    return False
+
+
+def _blank_cell(value: Any) -> bool:
+    """True when a raw cell carries neither a value nor a unit."""
+    if isinstance(value, dict):
+        return all(_blank_scalar(item) for item in value.values())
+    return _blank_scalar(value)
+
+
+def row_is_blank(values: dict[str, Any]) -> bool:
+    """A record is blank when every raw cell is empty.
+
+    The rule is deliberately format-independent: a CSV row of empty columns
+    and a JSON object with only null/empty cells describe the same absence of
+    data. Both readers drop such records before numbering, so blank rows never
+    inflate ``rows_total``, ``skipped`` or ``normalized`` in one format only.
+    """
+    return all(_blank_cell(value) for value in values.values())
+
+
 def detect_format(path: str | Path) -> str:
     suffix = Path(path).suffix.lower()
     if suffix == ".csv":
@@ -91,13 +118,15 @@ def _read_csv(path: Path) -> list[DataRow]:
             headers = [header.strip() for header in reader.fieldnames]
             if len(set(headers)) != len(headers):
                 raise DataReadError("CSV header contains duplicate column names")
-            for ordinal, raw_row in enumerate(reader, start=1):
+            for raw_row in reader:
                 values = {
                     str(key).strip(): value
                     for key, value in raw_row.items()
                     if key is not None
                 }
-                rows.append(DataRow(ordinal, values))
+                if row_is_blank(values):
+                    continue
+                rows.append(DataRow(len(rows) + 1, values))
     except OSError as exc:
         raise DataReadError(f"cannot read data file: {exc}") from exc
     except csv.Error as exc:
@@ -118,6 +147,8 @@ def _read_jsonl(path: Path) -> list[DataRow]:
                     raise DataReadError(f"invalid JSON: {exc.msg}", physical_line) from exc
                 if not isinstance(payload, dict):
                     raise DataReadError("each JSONL row must be an object", physical_line)
+                if row_is_blank(payload):
+                    continue
                 rows.append(DataRow(len(rows) + 1, payload))
     except OSError as exc:
         raise DataReadError(f"cannot read data file: {exc}") from exc

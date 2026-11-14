@@ -72,6 +72,9 @@ python -m unitcontract serve --host 127.0.0.1 --port 8731 \
 python -m unitcontract validate --contract c.yaml --data d.csv --db ledger.db
 python -m unitcontract convert --contract c.yaml --data d.csv --out normalized.jsonl
 python -m unitcontract report --contract c.yaml --data d.csv --out ./_report_out
+
+# 可选：用 overlay 只覆盖部分字段键，其余继承基线
+python -m unitcontract validate --contract c.yaml --overlay tuning.yaml --data d.csv
 ```
 
 `validate` 在存在违规行时返回退出码 1，契约 / 数据读取错误返回 2。
@@ -110,6 +113,11 @@ fields:
 - `rounding`：`half_up`（四舍五入）、`half_even`（银行家舍入）、`truncate`（向零截断）。
 - `range`：可选，按**规范单位**判断；`min` / `max` 可只给一侧。
 - 顶层 `defaults` 与字段合并；loader 也支持 overlay 文件按 `field` 名覆盖字段。
+  overlay 只覆盖**显式给出**的键，未给出的键（含 `allowed_units` 等列表键）继续继承基线；
+  `range` 这类映射按键合并（只给 `max` 时保留继承的 `min`）。overlay 的字段既可用列表声明
+  （`fields: [{field: energy, precision: 4}]`），也可用映射声明
+  （`fields: {energy: {precision: 4}}`）。命令行的 `--overlay` 适用于 `validate` /
+  `convert` / `report`，overlay 字节会并入 run 的契约哈希。
 
 数据约定：
 
@@ -117,7 +125,12 @@ fields:
 - JSONL 扁平形式：`{"energy": 1.2, "energy__unit": "kWh"}`。
 - JSONL 嵌套形式：`{"energy": {"value": 1.2, "unit": "kWh"}}`。
 - 报告中的 `row` 是数据记录序号（CSV 第一条数据为 1，不含表头）。
+- 全空记录（CSV 整行空列 / 空白行、JSONL 空行或所有单元格均为空）两种格式都会被跳过，
+  不占用行号、不计入 `skipped`，因此 CSV 与等价 JSONL 的行数、`normalized`、`skipped`
+  统计一致。只有部分字段为空的行保留，并按 `E_MISSING` / `E_UNIT_MISSING` 报告。
 - 空值判 `E_MISSING`；有值但无单位判 `E_UNIT_MISSING`。
+- `range` 与 `convert` 输出的规范化值使用同一份规范值（同一有理数、同一舍入），
+  因此同一行的 `E_OUT_OF_RANGE` 结论与输出的 `canonical_value` 不会互相矛盾。
 
 ### 错误码
 

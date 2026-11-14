@@ -58,6 +58,44 @@ def test_cli_convert_and_validate(tmp_path):
     assert db_path.is_file()
 
 
+def test_cli_overlay_only_touches_explicit_field_keys(tmp_path):
+    overlay = tmp_path / "tuning.yaml"
+    overlay.write_text(
+        "schema_version: '1'\n"
+        "name: synthetic-facility-readings\n"
+        "fields:\n"
+        "  - field: energy\n"
+        "    precision: 4\n"
+        "    rounding: half_up\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "overlay_report"
+    code = main([
+        "report", "--contract", str(CONTRACT), "--overlay", str(overlay),
+        "--data", str(DATA), "--out", str(out), "--no-timestamp",
+    ])
+    assert code == 0
+    payload = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    energy = next(f for f in payload["contract"]["fields"] if f["field"] == "energy")
+    # Overlay changes only precision/rounding; list-valued keys are inherited.
+    assert energy["precision"] == 4
+    assert energy["rounding"] == "half_up"
+    assert energy["allowed_units"] == ["J", "kJ", "kWh", "MWh", "GJ"]
+    assert energy["canonical_unit"] == "J"
+    # Inherited contract stays valid: no E_ALLOWED_MISSING style schema error.
+    assert "E_ALLOWED_MISSING" not in {item["code"] for item in payload["findings"]}
+    assert payload["counts"]["normalized_total"] == 114
+
+    converted = tmp_path / "overlay_normalized.jsonl"
+    assert main([
+        "convert", "--contract", str(CONTRACT), "--overlay", str(overlay),
+        "--data", str(DATA), "--out", str(converted),
+    ]) == 0
+    records = [json.loads(line) for line in converted.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["precision"] == 4
+    assert records[0]["rounding"] == "half_up"
+
+
 def test_cli_report_command(tmp_path):
     out = tmp_path / "reports"
     db_path = tmp_path / "reports.db"

@@ -7,6 +7,7 @@ from fractions import Fraction
 from typing import Iterable
 
 from unitcontract.contract.schema import Contract, ContractField
+from unitcontract.engine.canonical import resolve_canonical
 from unitcontract.engine.reader import DataRow, FieldCell
 from unitcontract.units.registry import UnitRegistry, UnknownUnitError
 from unitcontract.units.rounding import decimal_places, parse_fraction
@@ -185,16 +186,18 @@ def validate_field(
 
     findings: list[Finding] = []
     try:
-        canonical_value = registry.convert(
-            numeric_value, field.dimension, unit, field.canonical_unit
-        )
+        canonical = resolve_canonical(field, numeric_value, unit, registry)
     except TemperatureError as exc:
         findings.append(
             _finding(row, field, exc.code, exc.message, value_text, unit)
         )
-        canonical_value = None
+        canonical = None
 
-    if canonical_value is not None:
+    if canonical is not None:
+        # Range is judged on the same rounded canonical value that ``convert``
+        # emits, so a row cannot pass validation and still produce a value
+        # outside the declared range (or vice versa).
+        canonical_value = canonical.rounded
         if field.range_min is not None and canonical_value < field.range_min:
             findings.append(
                 _finding(

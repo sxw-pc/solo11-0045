@@ -77,15 +77,23 @@ def execute(
     no_timestamp: bool = False,
     registry: UnitRegistry | None = None,
     limit: int | None = None,
+    overlay_path: str | Path | None = None,
 ) -> RunResult:
     """Run the full read → validate → convert → audit pipeline."""
     registry = registry or UnitRegistry.bundled()
     contract_file = Path(contract_path)
     data_file = Path(data_path)
-    contract = load_contract(contract_file, registry=registry)
+    contract = load_contract(contract_file, registry=registry, overlay_path=overlay_path)
     fmt = detect_format(data_file) if data_format == "auto" else data_format.lower()
     rows = read_rows(data_file, data_format=fmt, limit=limit)
     contract_hash = contract_sha256(contract_file)
+    if overlay_path is not None:
+        # The merged contract, not just the base file, defines the run. Fold the
+        # overlay bytes into the hash so overlaid runs stay reproducible and
+        # distinct from the same base contract without the overlay.
+        contract_hash = hashlib.sha256(
+            contract_file.read_bytes() + b"\0overlay\0" + Path(overlay_path).read_bytes()
+        ).hexdigest()
     data_hash = hashlib.sha256(data_file.read_bytes()).hexdigest()
     source_name = data_file.name
 

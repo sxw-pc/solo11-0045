@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from fractions import Fraction
 
 import pytest
 
+from unitcontract.engine.converter import convert_records
 from unitcontract.engine.reader import DataRow
 from unitcontract.engine.validator import validate_field
 from unitcontract.units.temperature import (
@@ -77,3 +79,23 @@ def test_temperature_range_uses_canonical_celsius(contract, registry):
 
     warm = DataRow(2, {"temperature": "100", "temperature__unit": "F"})
     assert validate_field(warm, field, registry) == []
+
+
+@pytest.mark.parametrize(
+    ("value", "unit"),
+    [("350", "K"), ("50", "K"), ("-58", "F"), ("140", "F"), ("61", "C")],
+)
+def test_convert_and_validate_agree_on_temperature_rows(
+    contract, registry, value, unit
+):
+    field = contract.field_map["temperature"]
+    row = DataRow(1, {"temperature": value, "temperature__unit": unit})
+    findings = validate_field(row, field, registry)
+    converted = convert_records(contract, [row], registry).records
+    converted = [record for record in converted if record.field == "temperature"]
+
+    out_of_range = "E_OUT_OF_RANGE" in {item.code for item in findings}
+    assert len(converted) == 1
+    emitted = Fraction(Decimal(converted[0].canonical_value))
+    emitted_in_range = field.range_min <= emitted <= field.range_max
+    assert out_of_range is not emitted_in_range

@@ -163,6 +163,51 @@ def test_overlay_merge_by_field_name(registry):
     assert "count" in built.field_map
 
 
+def test_overlay_only_overrides_explicit_keys(registry):
+    base = valid_payload()
+    overlay = {"fields": [{"field": "energy", "precision": 4, "rounding": "half_up"}]}
+    built = build_contract(merge_contract_documents(base, overlay), "ov.yaml", registry=registry)
+    field = built.field_map["energy"]
+    assert (field.precision, field.rounding) == (4, "half_up")
+    # Untouched keys, including the list-valued allowed_units, are inherited.
+    assert field.dimension == "energy"
+    assert field.canonical_unit == "J"
+    assert field.allowed_units == ("J", "kWh")
+    assert field.range_min == 0 and field.range_max == 1000
+
+
+def test_overlay_list_key_keeps_list_semantics(registry):
+    base = valid_payload()
+    # A scalar or mapping must not be coerced into the inherited list key.
+    built = build_contract(
+        merge_contract_documents(base, {"fields": [{"field": "energy", "allowed_units": ["J"]}]}),
+        "ov.yaml",
+        registry=registry,
+    )
+    assert built.field_map["energy"].allowed_units == ("J",)
+
+
+def test_overlay_range_is_merged_key_by_key(registry):
+    base = valid_payload()
+    built = build_contract(
+        merge_contract_documents(base, {"fields": [{"field": "energy", "range": {"max": 10}}]}),
+        "ov.yaml",
+        registry=registry,
+    )
+    field = built.field_map["energy"]
+    assert field.range_min == 0
+    assert field.range_max == 10
+
+
+def test_overlay_mapping_form_is_supported(registry):
+    base = valid_payload()
+    overlay = {"fields": {"energy": {"precision": 6, "rounding": "truncate"}}}
+    built = build_contract(merge_contract_documents(base, overlay), "ov.yaml", registry=registry)
+    field = built.field_map["energy"]
+    assert (field.precision, field.rounding) == (6, "truncate")
+    assert field.allowed_units == ("J", "kWh")
+
+
 def test_invalid_yaml_reports_location(tmp_path):
     bad = tmp_path / "broken.yaml"
     bad.write_text("fields: [\n", encoding="utf-8")
