@@ -77,6 +77,44 @@ python -m unitcontract report --contract c.yaml --data d.csv --out ./_report_out
 `validate` 在存在违规行时返回退出码 1，契约 / 数据读取错误返回 2。
 `demo`、`convert`、`report` 成功返回 0。
 
+### `sensitive`：precision / rounding / range 试算
+
+调字段的 `precision`、`rounding` 或 `range` 时，不必再拿整批数据反复手工跑
+`validate`。`sensitive` 接收基线契约、一份数据和一份或多份「待试改动」YAML：
+
+```bash
+python -m unitcontract sensitive \
+  --contract c.yaml --data d.csv \
+  --trial energy_precision.yaml \
+  --trial temperature_range.yaml \
+  --out ./_sensitive_out
+```
+
+试算文件结构与 overlay 相同，但**只允许**出现 `precision`、`rounding`、`range`
+三个键（外加定位用的 `field`）；顶层只允许 `fields`，出现其他键即按契约错误
+（`E_SCHEMA_ROOT` 等既有错误码）退出 2，值合法性仍走原契约构建链路
+（如 `E_PRECISION_INVALID`、`E_ROUNDING_UNKNOWN`、`E_RANGE_INVALID`）。
+
+行为与产物：
+
+- 行数据、注册表和基线校验 / 换算结果只读取一次并复用；每份试算都从基线 payload
+  独立合并出全新的不可变契约，再走与 `validate` 相同的 `validate_records` /
+  `convert_records`，各试算之间不共享可变状态；温度偏移仍走既有 affine
+  converters，不另起口径。
+- 每个被改动字段输出四类行桶（行号升序，可通过 `--max-rows` 截断但总数保持精确）：
+  - `pass_to_violation`：基线合规、试算后违规（附新增错误码计数）；
+  - `violation_to_pass`：基线违规、试算后合规（附消失的错误码计数）；
+  - `rounding_text_only`：两侧均合规，仅 converter 渲染的规范值文本发生变化
+    （例如精度或舍入模式变化）——**不计入**由通过转违规；
+  - `unchanged`：结论与渲染文本均不变（含两侧都违规的行）。
+- 每字段摘要带改动前后的 `precision` / `rounding` / `range` 值与实际变动键。
+- 每份试算落盘一份 `sensitivity_<序号>_<试算文件名>.json`，并汇总成
+  `sensitivity_summary.json` 总表，按输入顺序逐份独立叠加到同一基线，便于挑选
+  影响面最小的方案。
+- 同一份试算重复运行产出逐字节一致的 JSON（排序键、无时间戳）。
+- 退出码：成功且无受影响行为 0；契约 / 数据错误 2；任一试算发现受影响行
+  （三类影响桶的行并集非空）为 1。
+
 ## 4. 契约 YAML 语法
 
 ```yaml
@@ -191,7 +229,7 @@ unit-contract/
 │  ├─ logging_utils.py          # 控制台 + 本地文件日志
 │  ├─ contract/                 # schema.py, loader.py, defaults.yaml
 │  ├─ units/                    # registry.py, temperature.py, rounding.py
-│  ├─ engine/                   # reader.py, validator.py, converter.py, auditor.py
+│  ├─ engine/                   # reader.py, validator.py, converter.py, auditor.py, sensitivity.py
 │  ├─ ledger/storage.py         # SQLite runs / findings
 │  ├─ report/                   # json_report.py, md_report.py, html_report.py
 │  ├─ server/app.py + static/   # loopback Flask 服务与本地 CSS
@@ -257,6 +295,7 @@ unit-contract/
 - `test_auditor.py`：错误码归因、计数、Top-N、空结果。
 - `test_ledger.py`：建表、写入、按 run_id 读回、幂等、删除。
 - `test_reports_golden.py`：JSON 片段与完整 Markdown golden；HTML 自包含检查。
+- `test_sensitivity.py`：试算结构限制与既有错误码、四类行桶、截断计数、试算隔离与逐字节确定性、CLI 退出码与 `validate` 错误码复现。
 - `test_cli_demo.py`：临时目录跑 demo、两次输出逐字节一致、convert / validate / report。
 - `test_server_smoke.py`：Flask `test_client` 冒烟，不监听真实端口。
 

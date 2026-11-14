@@ -31,6 +31,11 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return payload
 
 
+def read_yaml_document(path: str | Path) -> dict[str, Any]:
+    """Parse a YAML document, mapping parse/read failures to ``E_YAML_INVALID``."""
+    return _read_yaml(Path(path))
+
+
 def merge_contract_documents(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     """Merge an overlay contract document.
 

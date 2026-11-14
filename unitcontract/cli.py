@@ -11,6 +11,7 @@ from pathlib import Path
 from unitcontract.contract.schema import ContractValidationError
 from unitcontract.demo import format_demo_summary, run_demo
 from unitcontract.engine.reader import DataReadError
+from unitcontract.engine.sensitivity import run_sensitivity
 from unitcontract.ledger.storage import save_run
 from unitcontract.logging_utils import configure_logging
 from unitcontract.pipeline import RunResult, execute
@@ -101,6 +102,37 @@ def command_convert(args: argparse.Namespace) -> int:
     else:
         sys.stdout.write(content)
     return 0
+
+
+def command_sensitive(args: argparse.Namespace) -> int:
+    if args.log_file:
+        configure_logging(args.log_file)
+    if args.max_rows < 0:
+        print("error: --max-rows must be non-negative", file=sys.stderr)
+        return 2
+    results, master_path = run_sensitivity(
+        args.contract,
+        args.data,
+        trial_paths=args.trial,
+        out_dir=args.out,
+        data_format=args.data_format,
+        max_rows=args.max_rows,
+    )
+    for result in results:
+        totals = result.totals
+        print(
+            f"trial[{result.index}] {Path(result.trial_path).name} "
+            f"fields={','.join(result.touched_fields) or '-'} "
+            f"p2v={totals['pass_to_violation_rows']} "
+            f"v2p={totals['violation_to_pass_rows']} "
+            f"text_only={totals['rounding_text_only_rows']} "
+            f"unchanged={totals['unchanged_rows']} "
+            f"violating {result.baseline_violation_rows}->{result.trial_violation_rows}"
+        )
+        print(f"  summary={Path(result.summary_path).resolve()}")
+    print(f"aggregate={master_path.resolve()}")
+    any_affected = any(result.affected_rows for result in results)
+    return 1 if any_affected else 0
 
 
 def command_report(args: argparse.Namespace) -> int:
@@ -207,6 +239,30 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--db", help="optional SQLite ledger path")
     report.add_argument("--log-file")
     report.set_defaults(func=command_report)
+
+    sensitive = subparsers.add_parser(
+        "sensitive",
+        help="trial precision/rounding/range changes and summarize row-level impact",
+    )
+    _add_data_args(sensitive)
+    sensitive.add_argument(
+        "--trial",
+        action="append",
+        required=True,
+        help=(
+            "trial overlay YAML path (only precision, rounding and range may "
+            "change); repeat to run multiple independent trials on one baseline"
+        ),
+    )
+    sensitive.add_argument("--out", default="./_sensitive_out", help="summary output directory")
+    sensitive.add_argument(
+        "--max-rows",
+        type=int,
+        default=100,
+        help="max row numbers kept per bucket in each field summary (totals stay exact)",
+    )
+    sensitive.add_argument("--log-file")
+    sensitive.set_defaults(func=command_sensitive)
 
     serve = subparsers.add_parser("serve", help="start the loopback-only local viewer")
     serve.add_argument("--host", default="127.0.0.1")
